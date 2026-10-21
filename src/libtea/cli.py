@@ -321,7 +321,8 @@ def _output(data: Any, *, command: str | None = None) -> None:
     """Output ``data`` as JSON (when ``--json``) or rich-formatted tables/panels.
 
     In JSON mode, Pydantic models are serialized via ``model_dump(mode="json",
-    by_alias=True)`` to produce camelCase keys matching the TEA API wire format.
+    by_alias=True)``: libtea's model shape with camelCase aliases, stable across
+    TEA spec versions (not a byte-for-byte copy of any server's wire format).
     """
     output_file, no_color = _get_output_options()
     if _is_json_output():
@@ -1264,7 +1265,8 @@ def inspect(
                     try:
                         releases = client.get_component_releases(comp_ref.uuid)
                         if releases:
-                            latest = releases[0]
+                            # TEA 1.0.0 lists releases oldest first; pick by createdDate, not position.
+                            latest = max(releases, key=lambda r: r.created_date)
                             cr = client.get_component_release(latest.uuid)
                             comp_data["resolvedRelease"] = cr.model_dump(mode="json", by_alias=True)
                             comp_data["resolvedNote"] = "latest release (not pinned)"

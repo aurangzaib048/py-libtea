@@ -15,11 +15,15 @@ from click.testing import CliRunner  # noqa: E402
 from libtea.cli import app  # noqa: E402
 from tests.spec_data import (  # noqa: E402
     ARTIFACT,
+    COMPONENT,
+    COMPONENT_RELEASE,
     LEGACY,
     PRODUCT_RELEASE,
     V1_ARTIFACT,
     V1_BASE_URL,
     V1_COLLECTION,
+    V1_PRODUCT_RELEASE,
+    V1_RELEASE,
 )
 
 runner = CliRunner()
@@ -831,6 +835,59 @@ class TestCLIInspectGetComponentFallback:
         assert comp["name"] == "Broken Component"
         assert "resolvedRelease" not in comp
         assert "Warning: could not resolve releases for component" in result.stderr
+
+
+class TestCLIInspectV1:
+    """``inspect`` against a TEA 1.0.0 server."""
+
+    TEI = "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
+
+    def _discovery_and_release(self, components: list[dict]) -> None:
+        responses.get(
+            f"{V1_BASE_URL}/discovery",
+            json=[
+                {"productReleaseUuid": PRODUCT_RELEASE, "servers": [{"rootUrl": V1_BASE_URL, "versions": ["1.0.0"]}]}
+            ],
+        )
+        collection = {**V1_COLLECTION, "uuid": PRODUCT_RELEASE, "belongsTo": "PRODUCT_RELEASE", "artifacts": []}
+        responses.get(
+            f"{V1_BASE_URL}/productRelease/{PRODUCT_RELEASE}",
+            json={**V1_PRODUCT_RELEASE, "components": components, "latestCollection": collection},
+        )
+
+    @responses.activate
+    def test_rich_output_with_unnamed_artifact_and_server_hosted_format(self):
+        """1.0.0 artifacts may omit ``name`` and formats may omit ``url`` (server-hosted)."""
+        self._discovery_and_release([{"uuid": COMPONENT, "release": COMPONENT_RELEASE}])
+        artifact = {**V1_ARTIFACT, "formats": [{"mediaType": "application/vnd.cyclonedx+json"}]}
+        responses.get(
+            f"{V1_BASE_URL}/componentRelease/{COMPONENT_RELEASE}",
+            json={**V1_RELEASE, "latestCollection": {**V1_COLLECTION, "artifacts": [artifact]}},
+        )
+        result = runner.invoke(app, ["inspect", self.TEI, "--base-url", V1_BASE_URL])
+        assert result.exit_code == 0, _all_output(result)
+        assert ARTIFACT in _strip_ansi(result.output)
+
+    @responses.activate
+    def test_unpinned_component_resolves_newest_release(self):
+        """1.0.0 sorts component releases by ``createdDate`` ascending, so the last one is the newest."""
+        newer = "e5f6a7b8-c9d0-1234-efab-567890123456"
+        self._discovery_and_release([{"uuid": COMPONENT}])
+        responses.get(f"{V1_BASE_URL}/component/{COMPONENT}", json={"uuid": COMPONENT, "name": "C", "identifiers": []})
+        newer_release = {**V1_RELEASE, "uuid": newer, "version": "2.25.0", "createdDate": "2025-01-10T10:51:00Z"}
+        responses.get(
+            f"{V1_BASE_URL}/component/{COMPONENT}/releases",
+            json={"hasNext": False, "results": [V1_RELEASE, newer_release]},
+        )
+        for release in (V1_RELEASE, newer_release):
+            responses.get(
+                f"{V1_BASE_URL}/componentRelease/{release['uuid']}",
+                json={**release, "latestCollection": {**V1_COLLECTION, "uuid": release["uuid"]}},
+            )
+        result = runner.invoke(app, ["--json", "inspect", self.TEI, "--base-url", V1_BASE_URL])
+        assert result.exit_code == 0, _all_output(result)
+        resolved = json.loads(result.stdout)[0]["components"][0]["resolvedRelease"]
+        assert resolved["release"]["version"] == "2.25.0"
 
 
 class TestCLITeiAutoDiscovery:

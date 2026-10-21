@@ -520,20 +520,20 @@ def _inspect_component_details(comp: dict[str, Any], *, console: Console) -> Non
         if formats:
             for fmt in formats:
                 tbl.add_row(
-                    escape(art.get("uuid", "-")),
-                    escape(art.get("name", "-")),
-                    escape(art.get("type", "-")),
+                    _esc(art.get("uuid")),
+                    _esc(art.get("name")),
+                    _esc(art.get("type")),
                     escape(applies),
-                    escape(fmt.get("mediaType", "-")),
+                    _esc(fmt.get("mediaType")),
                     _esc(fmt.get("description")),
-                    escape(fmt.get("url", "-")),
+                    _esc(fmt.get("url")),
                     _esc(fmt.get("signatureUrl")),
                 )
         else:
             tbl.add_row(
-                escape(art.get("uuid", "-")),
-                escape(art.get("name", "-")),
-                escape(art.get("type", "-")),
+                _esc(art.get("uuid")),
+                _esc(art.get("name")),
+                _esc(art.get("type")),
                 escape(applies),
                 "-",
                 "-",
