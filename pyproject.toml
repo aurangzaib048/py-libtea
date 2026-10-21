@@ -21,8 +21,10 @@ classifiers = [
 ]
 dependencies = [
     "requests>=2.32.4,<3",
+    "idna>=3.15,<4",
     "pydantic>=2.1.0,<3",
     "semver>=3.0.4,<4",
+    "urllib3>=2.8.0,<3",
 ]
 
 [project.urls]
