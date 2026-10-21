@@ -141,7 +141,7 @@ Each check returns one of four statuses:
 | Check | Description |
 |-------|-------------|
 | `discovery` | Discover a TEI and verify the server returns results |
-| `discovery_404` | Verify unknown TEI returns 404 (TEA 0.x also accepts an empty list; on TEA 1.x a successful discovery response must be a non-empty array) |
+| `discovery_404` | Verify unknown TEI returns 404 (TEA 0.x also accepts an empty list; on TEA 1.x the 404 must carry a TEA error body and a successful discovery response must be a non-empty array) |
 
 ### Products (5 checks)
 

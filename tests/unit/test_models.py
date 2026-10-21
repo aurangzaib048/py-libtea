@@ -418,6 +418,15 @@ class TestPagination:
         with pytest.raises(ValidationError):
             PaginatedProductResponse.model_validate([])
 
+    def test_v1_missing_results_rejected(self):
+        with pytest.raises(ValidationError, match="missing required field 'results'"):
+            PaginatedProductResponse.model_validate({"hasNext": False})
+
+    def test_legacy_missing_results_still_accepted(self):
+        data = {"timestamp": "2024-03-20T15:30:00Z", "pageStartIndex": 0, "pageSize": 2, "totalResults": 0}
+        p = PaginatedProductResponse.model_validate(data, context=LEGACY)
+        assert (p.results, p.has_next) == ((), False)
+
     def test_v1_has_next_without_token_rejected(self):
         with pytest.raises(ValidationError, match="nextPageToken"):
             PaginatedProductResponse.model_validate({"hasNext": True, "results": []})

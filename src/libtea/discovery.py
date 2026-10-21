@@ -217,7 +217,7 @@ def fetch_well_known(
 
             try:
                 data = response.json()
-            except ValueError as exc:
+            except (ValueError, RecursionError) as exc:  # RecursionError: deep nesting
                 raise TeaDiscoveryError(f"Invalid JSON in .well-known/tea response from {domain}") from exc
         finally:
             if response is not None:

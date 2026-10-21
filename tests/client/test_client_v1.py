@@ -241,10 +241,27 @@ def test_iter_stops_at_page_cap(v1, monkeypatch):
 
 
 @responses.activate
-def test_iter_stops_on_empty_page(v1):
+def test_iter_follows_token_past_empty_page(v1):
+    """An empty page with ``hasNext`` and a fresh token is not the end of the results."""
+    url = f"{V1_BASE_URL}/products"
+    pages = [
+        (None, {"hasNext": True, "nextPageToken": "t1", "results": [product(PRODUCT, "P1")]}),
+        ("t1", {"hasNext": True, "nextPageToken": "t2", "results": []}),
+        ("t2", {"hasNext": False, "results": [product(PRODUCT, "P2"), product(PRODUCT, "P3")]}),
+    ]
+    for sent, page in pages:
+        query = {"idType": "PURL", "idValue": "pkg:x", "pageSize": "100", **({"pageToken": sent} if sent else {})}
+        responses.get(url, match=[matchers.query_param_matcher(query)], json=page)
+    assert [p.name for p in v1.iter_products("PURL", "pkg:x")] == ["P1", "P2", "P3"]
+    assert len(responses.calls) == 3
+
+
+@responses.activate
+def test_iter_raises_on_repeated_token_with_empty_pages(v1):
     responses.get(f"{V1_BASE_URL}/products", json={"hasNext": True, "nextPageToken": "t", "results": []})
-    assert list(v1.iter_products("PURL", "pkg:x")) == []
-    assert len(responses.calls) == 1
+    with pytest.raises(TeaServerError, match="repeated"):
+        list(v1.iter_products("PURL", "pkg:x"))
+    assert len(responses.calls) == 2
 
 
 @responses.activate
@@ -308,6 +325,16 @@ def test_legacy_token_maps_to_offset(legacy):
 def test_legacy_non_numeric_token_rejected(legacy, token):  # Review Focus 2
     with pytest.raises(TeaValidationError, match="integer offset"):
         legacy.list_products(page_token=token)
+    assert len(responses.calls) == 0
+
+
+@responses.activate
+@pytest.mark.parametrize("fixture", ["v1", "legacy"])
+def test_non_string_page_token_rejected(request, fixture):
+    """An int carried over from the old ``page_offset`` argument fails cleanly before any request."""
+    client = request.getfixturevalue(fixture)
+    with pytest.raises(TeaValidationError, match="page_token must be a string"):
+        client.list_products(page_token=200)
     assert len(responses.calls) == 0
 
 

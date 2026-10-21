@@ -631,6 +631,8 @@ class _PaginatedResponse(_TeaModel, Generic[_R]):
 
     def _v1_problems(self) -> list[str]:
         problems = super()._v1_problems()
+        if "results" not in self.model_fields_set:
+            problems.append("missing required field 'results'")
         if self.has_next and not self.next_page_token:
             problems.append("hasNext is true but nextPageToken is missing")
         return problems

@@ -296,6 +296,10 @@ class TeaClient:
 
     def _page_params(self, page_token: str | None, page_size: int) -> dict[str, typing.Any]:
         """Build the paging query: an opaque ``pageToken`` on TEA 1.x, an integer ``pageOffset`` on 0.x."""
+        if page_token is not None and not isinstance(page_token, str):
+            raise TeaValidationError(
+                f"page_token must be a string (a previous page's nextPageToken), got {type(page_token).__name__}"
+            )
         if not self.is_legacy:
             _validate_page_size(page_size, _MAX_PAGE_SIZE_V1)
             return {"pageSize": page_size} if page_token is None else {"pageSize": page_size, "pageToken": page_token}
@@ -872,7 +876,7 @@ class TeaClient:
         for _ in range(_MAX_PAGES):
             page = fetch_page(**kwargs, page_token=token, page_size=page_size)
             yield from page.results
-            if not page.has_next or not page.results:
+            if not page.has_next:  # an empty page may still carry a token; seen-set and cap bound the loop
                 return
             token = page.next_page_token
             if token in seen:

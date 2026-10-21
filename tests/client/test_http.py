@@ -130,6 +130,13 @@ class TestTeaHttpClient:
             http_client.get_json("/product/abc")
 
     @responses.activate
+    def test_get_json_deeply_nested_body_raises_validation_error(self, http_client, base_url):
+        """json.loads raises RecursionError, not ValueError, when nesting exceeds the recursion limit."""
+        responses.get(f"{base_url}/product/abc", body=b"[" * 100_000, status=200)
+        with pytest.raises(TeaValidationError, match="Invalid JSON"):
+            http_client.get_json("/product/abc")
+
+    @responses.activate
     def test_download_creates_parent_directories(self, http_client, tmp_path):
         content = b"nested file"
         responses.get("https://artifacts.example.com/sbom.xml", body=content)

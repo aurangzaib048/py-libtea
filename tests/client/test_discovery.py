@@ -291,6 +291,12 @@ class TestFetchWellKnown:
             fetch_well_known("example.com")
 
     @responses.activate
+    def test_fetch_well_known_deeply_nested_json_raises_discovery_error(self):
+        responses.get("https://example.com/.well-known/tea", body=b"[" * 100_000)
+        with pytest.raises(TeaDiscoveryError, match="Invalid JSON"):
+            fetch_well_known("example.com")
+
+    @responses.activate
     def test_fetch_well_known_invalid_schema_raises_discovery_error(self):
         responses.get("https://example.com/.well-known/tea", json={"bad": "data"})
         with pytest.raises(TeaDiscoveryError, match="Invalid .well-known/tea"):

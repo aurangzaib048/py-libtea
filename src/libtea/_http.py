@@ -246,7 +246,7 @@ class TeaHttpClient:
                 raise TeaValidationError(f"Response body exceeds limit: >{limit} bytes (limit {limit})")
             try:
                 result = json.loads(body)
-            except (ValueError, UnicodeDecodeError) as exc:
+            except (ValueError, UnicodeDecodeError, RecursionError) as exc:  # RecursionError: deep nesting
                 raise TeaValidationError(f"Invalid JSON in response: {exc}") from exc
 
             # Cache store (bounded: evict least-recently-stored entry when full)

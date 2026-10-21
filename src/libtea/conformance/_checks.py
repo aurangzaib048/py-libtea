@@ -102,7 +102,7 @@ def check_discovery(client: TeaClient, ctx: CheckContext) -> CheckResult:
 
 
 def check_discovery_404(client: TeaClient, ctx: CheckContext) -> CheckResult:
-    """Discover a fake TEI and expect TeaNotFoundError (or, on TEA 0.x, an empty list)."""
+    """Discover a fake TEI and expect a 404: with a TEA error body on TEA 1.x; on TEA 0.x an empty list also passes."""
     name = "discovery_404"
     if client.is_legacy:
         fake_tei = f"urn:tei:uuid:nonexistent.example.com:{_ZERO_UUID}"
@@ -110,7 +110,9 @@ def check_discovery_404(client: TeaClient, ctx: CheckContext) -> CheckResult:
         fake_tei = f"tei://nonexistent.example.com/uuid/{_ZERO_UUID}"
     try:
         results = client.discover(fake_tei)
-    except TeaNotFoundError:
+    except TeaNotFoundError as exc:
+        if not client.is_legacy and exc.error_type is None:
+            return _fail(name, "Server returned 404 without a TEA error body; TEA 1.0.0 requires a TEA error body")
         return _pass(name, "Server returned 404 for unknown TEI")
     except TeaError as exc:
         if _is_empty_discovery(exc):

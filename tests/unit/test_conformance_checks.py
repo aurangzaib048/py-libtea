@@ -295,6 +295,19 @@ class TestCheckDiscovery404:
         assert "tei%3A%2F%2Fnonexistent.example.com%2Fuuid%2F" + _ZERO_UUID in responses.calls[0].request.url
 
     @responses.activate
+    def test_v1_fail_on_404_without_tea_error_body(self, v1):
+        """A bare 404 (e.g. an unmounted path) is not a TEA "not found" answer on 1.0.0."""
+        responses.get(f"{V1_BASE_URL}/discovery", status=404, body="<html>nginx</html>")
+        result = check_discovery_404(v1, CheckContext())
+        assert result.status == CheckStatus.FAIL
+        assert "TEA 1.0.0 requires a TEA error body" in result.message
+
+    @responses.activate
+    def test_legacy_passes_on_404_without_tea_error_body(self, legacy):
+        responses.get(f"{BASE_URL}/discovery", status=404, body="<html>nginx</html>")
+        assert check_discovery_404(legacy, CheckContext()).status == CheckStatus.PASS
+
+    @responses.activate
     def test_legacy_keeps_urn(self, legacy):
         responses.get(f"{BASE_URL}/discovery", status=404, json={"error": "OBJECT_UNKNOWN"})
         result = check_discovery_404(legacy, CheckContext())
