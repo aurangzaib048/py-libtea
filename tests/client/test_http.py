@@ -20,6 +20,7 @@ from libtea.exceptions import (
     TeaServerError,
     TeaValidationError,
 )
+from tests.spec_data import LEGACY_BASE_URL
 
 
 class TestTeaHttpClient:
@@ -312,6 +313,53 @@ class TestEmptyBodyErrors:
         with pytest.raises(TeaNotFoundError) as exc_info:
             http_client.get_json("/product/abc")
         assert exc_info.value.error_type is None
+
+
+class TestErrorTypeFromBody:
+    """Every 4xx surfaces the TEA ``error`` value when the body is a JSON object with a string ``error``."""
+
+    @responses.activate
+    def test_400_carries_error_type(self, http_client):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=400, json={"error": "INVALID_PAGE_TOKEN"})
+        with pytest.raises(TeaRequestError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type == "INVALID_PAGE_TOKEN"
+        assert "INVALID_PAGE_TOKEN" in str(exc.value)
+
+    @responses.activate
+    def test_unknown_error_value_passes_through(self, http_client):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=404, json={"error": "SOMETHING_NEW"})
+        with pytest.raises(TeaNotFoundError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type == "SOMETHING_NEW"
+
+    @responses.activate
+    def test_404_non_string_error_ignored(self, http_client):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=404, json={"error": 5})
+        with pytest.raises(TeaNotFoundError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type is None
+
+    @responses.activate
+    def test_400_non_string_error_ignored(self, http_client):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=400, json={"error": ["INVALID_REQUEST"]})
+        with pytest.raises(TeaRequestError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type is None
+
+    @responses.activate
+    def test_400_non_json_body_has_no_error_type(self, http_client):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=400, body="Bad Request")
+        with pytest.raises(TeaRequestError, match="Bad Request") as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type is None
+
+    @responses.activate
+    def test_3xx_has_no_error_type(self, http_client):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=301)
+        with pytest.raises(TeaRequestError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type is None
 
 
 BASE_URL = "https://api.example.com/tea/v0.4.0"

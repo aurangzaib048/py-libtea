@@ -220,6 +220,17 @@ class TestEnumCompleteness:
         assert ErrorType.OBJECT_NOT_SHAREABLE == "OBJECT_NOT_SHAREABLE"
         assert isinstance(ErrorType.OBJECT_UNKNOWN, str)
 
+    def test_error_type_1_0_0_members(self):
+        assert {e.value for e in ErrorType} == {
+            "OBJECT_UNKNOWN",
+            "OBJECT_NOT_SHAREABLE",
+            "NOT_IMPLEMENTED",
+            "NO_ACCEPTABLE_FORMAT",
+            "SIGNATURE_NOT_FOUND",
+            "INVALID_REQUEST",
+            "INVALID_PAGE_TOKEN",
+        }
+
 
 class TestProduct:
     def test_product_from_json(self):
@@ -706,12 +717,23 @@ class TestErrorResponse:
 
     def test_to_json(self):
         resp = ErrorResponse(error=ErrorType.OBJECT_UNKNOWN)
-        data = resp.model_dump(by_alias=True)
+        data = resp.model_dump(by_alias=True, exclude_none=True)
         assert data == {"error": "OBJECT_UNKNOWN"}
 
-    def test_rejects_unknown_error_type(self):
+    def test_unknown_error_value_accepted(self):
+        resp = ErrorResponse.model_validate({"error": "SOMETHING_NEW", "message": "x"})
+        assert resp.error == "SOMETHING_NEW"
+        assert resp.message == "x"
+
+    def test_message_optional(self):
+        assert ErrorResponse.model_validate({"error": "INVALID_REQUEST"}).message is None
+
+    def test_known_error_compares_equal_to_enum(self):
+        assert ErrorResponse.model_validate({"error": "INVALID_PAGE_TOKEN"}).error == ErrorType.INVALID_PAGE_TOKEN
+
+    def test_non_string_error_rejected(self):
         with pytest.raises(ValidationError):
-            ErrorResponse.model_validate({"error": "INVALID_TYPE"})
+            ErrorResponse.model_validate({"error": 5})
 
     def test_extra_fields_tolerated(self):
         """_TeaModel uses extra='ignore' — tolerant parsing for robustness."""

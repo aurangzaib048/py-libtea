@@ -38,6 +38,21 @@ _ERROR_BODY_SNIPPET_BYTES = 200
 _DOWNLOAD_CHUNK_SIZE = 8192
 
 
+def _tea_error_type(raw: bytes) -> str | None:
+    """Return the ``error`` value of a TEA error body, or ``None``.
+
+    A TEA error is a JSON object with a string ``error`` property. Anything else
+    (empty, non-JSON, non-object, non-string ``error``) yields ``None``. Unknown
+    ``error`` values are returned as-is; clients must not reject them.
+    """
+    try:
+        body = json.loads(raw)
+    except ValueError:  # includes JSONDecodeError and UnicodeDecodeError; empty input
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    return error if isinstance(error, str) else None
+
+
 def probe_endpoint(url: str, timeout: float = 5.0) -> None:
     """Probe a URL to verify the server is reachable.
 
@@ -394,30 +409,19 @@ class TeaHttpClient:
         if status in (401, 403):
             logger.warning("Authentication failed: HTTP %d for %s", status, response.url)
             raise TeaAuthenticationError(f"Authentication failed: HTTP {status}")
-        if status == 404:
-            error_type = None
-            try:
-                raw_bytes = TeaHttpClient._read_error_body(response)
-                if raw_bytes:
-                    body = json.loads(raw_bytes)
-                    if isinstance(body, dict):
-                        error_type = body.get("error")
-            except (ValueError, UnicodeDecodeError):
-                pass
-            raise TeaNotFoundError(f"Not found: HTTP {status}", error_type=error_type)
         if status >= 500:
             raise TeaServerError(f"Server error: HTTP {status}")
+        # 4xx: read the bounded body once; the snippet and the TEA error type both come from it.
+        raw_bytes = TeaHttpClient._read_error_body(response)
+        error_type = _tea_error_type(raw_bytes)
+        if status == 404:
+            raise TeaNotFoundError(f"Not found: HTTP {status}", error_type=error_type)
         # Remaining 4xx codes (400, 405-499 excluding 401/403/404)
         limit = _ERROR_BODY_SNIPPET_BYTES
-        body_text = ""
-        try:
-            raw_bytes = TeaHttpClient._read_error_body(response)
-            body_text = raw_bytes.decode("utf-8", errors="replace")[:limit]
-            if len(raw_bytes) > limit:
-                body_text += " (truncated)"
-        except Exception:
-            pass
+        body_text = raw_bytes.decode("utf-8", errors="replace")[:limit]
+        if len(raw_bytes) > limit:
+            body_text += " (truncated)"
         msg = f"Client error: HTTP {status}"
         if body_text:
             msg = f"{msg} — {body_text}"
-        raise TeaRequestError(msg)
+        raise TeaRequestError(msg, error_type=error_type)

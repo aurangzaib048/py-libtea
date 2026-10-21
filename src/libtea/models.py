@@ -186,20 +186,33 @@ class CollectionUpdateReasonType(StrEnum):
 
 
 class ErrorType(StrEnum):
-    """TEA API error types returned in 404 responses."""
+    """TEA API error types carried in the ``error`` property of a 4xx response body.
+
+    Servers may send values not listed here; clients must not reject them, so
+    :attr:`ErrorResponse.error` is a plain ``str``. ``OBJECT_NOT_SHAREABLE`` is
+    0.4.0 only.
+    """
 
     OBJECT_UNKNOWN = "OBJECT_UNKNOWN"
-    OBJECT_NOT_SHAREABLE = "OBJECT_NOT_SHAREABLE"
+    OBJECT_NOT_SHAREABLE = "OBJECT_NOT_SHAREABLE"  # 0.4.0 only
+    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+    NO_ACCEPTABLE_FORMAT = "NO_ACCEPTABLE_FORMAT"
+    SIGNATURE_NOT_FOUND = "SIGNATURE_NOT_FOUND"
+    INVALID_REQUEST = "INVALID_REQUEST"
+    INVALID_PAGE_TOKEN = "INVALID_PAGE_TOKEN"
 
 
 class ErrorResponse(_TeaModel):
-    """TEA API 404 error response body.
+    """TEA API error response body.
 
-    Per spec, 404 responses return ``{"error": "OBJECT_UNKNOWN"}`` or
-    ``{"error": "OBJECT_NOT_SHAREABLE"}`` with no additional fields.
+    ``error`` is typically one of :class:`ErrorType` (compare with ``==``) but
+    is kept as ``str``: the spec forbids rejecting a response over an
+    ``error`` value the client does not know. ``message`` is an optional
+    human-readable explanation for diagnostics only.
     """
 
-    error: ErrorType
+    error: str
+    message: str | None = None
 
 
 # --- Shared types ---
