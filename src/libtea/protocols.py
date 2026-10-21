@@ -48,7 +48,7 @@ class TeaClientProtocol(Protocol):
 
     # --- Discovery ---
 
-    def discover(self, tei: str) -> list[DiscoveryInfo]: ...
+    def discover(self, tei: str | None = None, *, purl: str | None = None) -> list[DiscoveryInfo]: ...
 
     # --- Products ---
 

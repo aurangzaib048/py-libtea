@@ -430,11 +430,15 @@ def app(
 
 
 @app.command()
-@click.argument("tei")
+@click.argument("tei", required=False)
+@click.option(
+    "--purl", default=None, help="Resolve a PURL on the server given by --base-url (TEA 1.x), instead of a TEI"
+)
 @click.option("--quiet", "-q", is_flag=True, help="Output only UUIDs, one per line")
 @shared_options
 def discover(
-    tei: str,
+    tei: str | None,
+    purl: str | None,
     quiet: bool,
     base_url: str | None,
     token: str | None,
@@ -445,17 +449,22 @@ def discover(
     port: int | None,
     allow_private_ips: bool,
 ) -> None:
-    """Resolve a TEI to product release UUID(s).
+    """Resolve a TEI, or a PURL (--purl, TEA 1.x), to product release UUID(s).
 
     \b
     Examples:
       tea-cli discover 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --domain example.com
       tea-cli discover 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --quiet
+      tea-cli discover --purl 'pkg:pypi/requests@2.31.0' --base-url https://tea.example.com/tea/v1.0.0
     """
+    if (tei is None) == (purl is None):
+        raise click.UsageError("Provide exactly one of TEI or --purl")
+    if purl is not None and not base_url:
+        _error("--purl requires --base-url")
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, tei=tei, allow_private_ips=allow_private_ips
     ) as client:
-        result = client.discover(tei)
+        result = client.discover(tei, purl=purl)
     if quiet:
         for d in result:
             print(d.product_release_uuid)

@@ -93,6 +93,37 @@ def test_discover_passes_tei_verbatim(v1):
 
 
 @responses.activate
+def test_discover_by_purl(v1):
+    purl = "pkg:maven/org.apache.logging.log4j/log4j-core@2.24.3"
+    responses.get(
+        f"{V1_BASE_URL}/discovery",
+        match=[matchers.query_param_matcher({"purl": purl})],
+        json=[
+            {
+                "productReleaseUuid": PRODUCT_RELEASE,
+                "servers": [{"rootUrl": "https://api.example.com", "versions": ["1.0.0"]}],
+            }
+        ],
+    )
+    assert v1.discover(purl=purl)[0].product_release_uuid == PRODUCT_RELEASE
+
+
+@responses.activate
+@pytest.mark.parametrize("kwargs", [{}, {"tei": "tei://example.com/uuid/x", "purl": "pkg:x/y"}])
+def test_discover_needs_exactly_one(v1, kwargs):
+    with pytest.raises(TeaValidationError, match="exactly one"):
+        v1.discover(**kwargs)
+    assert len(responses.calls) == 0
+
+
+@responses.activate
+def test_purl_rejected_on_legacy(legacy):
+    with pytest.raises(TeaValidationError, match="TEA 1.x"):
+        legacy.discover(purl="pkg:x/y")
+    assert len(responses.calls) == 0
+
+
+@responses.activate
 def test_discover_empty_array_rejected_on_v1(v1):
     responses.get(f"{V1_BASE_URL}/discovery", json=[])
     with pytest.raises(TeaValidationError, match="non-empty"):

@@ -13,7 +13,7 @@ click = pytest.importorskip("click", reason="click not installed (install libtea
 from click.testing import CliRunner  # noqa: E402
 
 from libtea.cli import app  # noqa: E402
-from tests.spec_data import LEGACY  # noqa: E402
+from tests.spec_data import LEGACY, PRODUCT_RELEASE, V1_BASE_URL  # noqa: E402
 
 runner = CliRunner()
 
@@ -459,6 +459,40 @@ class TestCLIErrorPaths:
         responses.get(f"{BASE_URL}/discovery", status=404, json={"error": "OBJECT_UNKNOWN"})
         result = runner.invoke(app, ["discover", tei, "--base-url", BASE_URL])
         assert result.exit_code == 1
+
+
+class TestCLIDiscoverPurl:
+    @responses.activate
+    def test_discover_purl(self):
+        purl = "pkg:x/y"
+        responses.get(
+            f"{V1_BASE_URL}/discovery",
+            match=[matchers.query_param_matcher({"purl": purl})],
+            json=[
+                {
+                    "productReleaseUuid": PRODUCT_RELEASE,
+                    "servers": [{"rootUrl": "https://api.example.com", "versions": ["1.0.0"]}],
+                }
+            ],
+        )
+        result = runner.invoke(app, ["--json", "discover", "--purl", purl, "--base-url", V1_BASE_URL])
+        assert result.exit_code == 0
+        assert json.loads(result.output)[0]["productReleaseUuid"] == PRODUCT_RELEASE
+
+    @responses.activate
+    def test_purl_requires_base_url(self):
+        result = runner.invoke(app, ["discover", "--purl", "pkg:x/y", "--domain", "example.com"])
+        assert result.exit_code == 1
+        assert "--purl requires --base-url" in _all_output(result)
+        assert len(responses.calls) == 0
+
+    @responses.activate
+    @pytest.mark.parametrize("args", [[], ["tei://example.com/uuid/x", "--purl", "pkg:x/y"]])
+    def test_exactly_one_of_tei_or_purl(self, args):
+        result = runner.invoke(app, ["discover", *args, "--base-url", V1_BASE_URL])
+        assert result.exit_code == 2
+        assert "exactly one of TEI or --purl" in _all_output(result)
+        assert len(responses.calls) == 0
 
 
 class TestCLIDiscoveryPath:

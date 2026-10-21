@@ -250,22 +250,31 @@ class TeaClient:
 
     # --- Discovery ---
 
-    def discover(self, tei: str) -> list[DiscoveryInfo]:
-        """Resolve a TEI to product release UUID(s) via the discovery endpoint.
+    def discover(self, tei: str | None = None, *, purl: str | None = None) -> list[DiscoveryInfo]:
+        """Resolve a TEI, or a PURL within this server's inventory, to product release UUID(s).
+
+        Exactly one of ``tei`` and ``purl`` must be given. Discovery by PURL needs an API base the
+        client already knows and is only available on TEA 1.x servers.
 
         Args:
             tei: TEI string, sent verbatim (e.g. ``tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1``
                 or ``urn:tei:purl:example.com:pkg:pypi/lib@1.0``).
+            purl: Package URL, sent verbatim (e.g. ``pkg:maven/org.apache.logging.log4j/log4j-core@2.24.3``).
 
         Returns:
             List of discovery results, each with a product release UUID and servers.
 
         Raises:
-            TeaValidationError: If the response is malformed, or empty on a TEA 1.x server.
+            TeaValidationError: If not exactly one of ``tei`` and ``purl`` is given, if ``purl`` is used on a
+                TEA 0.x server, or if the response is malformed, or empty on a TEA 1.x server.
             TeaConnectionError: On network failure.
         """
+        if (tei is None) == (purl is None):
+            raise TeaValidationError("Provide exactly one of tei or purl")
+        if purl is not None and self.is_legacy:
+            raise TeaValidationError("Discovery by PURL requires a TEA 1.x server")
         # requests auto-encodes query params — do NOT pre-encode with quote()
-        data = self._http.get_json("/discovery", params={"tei": tei})
+        data = self._http.get_json("/discovery", params={"tei": tei} if tei is not None else {"purl": purl})
         results = _validate_list(DiscoveryInfo, data, legacy=self.is_legacy)
         if not results and not self.is_legacy:
             raise TeaValidationError("Invalid discovery response: expected a non-empty array")
