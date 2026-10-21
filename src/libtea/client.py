@@ -52,6 +52,7 @@ from libtea.models import (
     PaginatedProductResponse,
     Product,
     ProductRelease,
+    ProductReleaseWithCollection,
     Release,
     _PaginatedResponse,
 )
@@ -373,17 +374,18 @@ class TeaClient:
         )
         return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
-    def get_product_release(self, uuid: str) -> ProductRelease:
+    def get_product_release(self, uuid: str) -> ProductReleaseWithCollection:
         """Get a product release by UUID.
 
         Args:
             uuid: Product release UUID.
 
         Returns:
-            The product release with its component references.
+            The product release with its component references and, on TEA 1.x
+            servers, its latest collection.
         """
         data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}")
-        return _validate(ProductRelease, data, legacy=self.is_legacy)
+        return _validate(ProductReleaseWithCollection, data, legacy=self.is_legacy)
 
     def get_product_release_collection_latest(self, uuid: str) -> Collection:
         """Get the latest collection for a product release.

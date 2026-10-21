@@ -53,6 +53,7 @@ from libtea.models import (  # noqa: E402
     PaginatedProductResponse,
     Product,
     ProductRelease,
+    ProductReleaseWithCollection,
     Release,
     ReleaseDistribution,
     TeaServerInfo,
@@ -531,6 +532,12 @@ class TestFormatOutputDispatch:
         product = Product(uuid=UUID, name="Test", identifiers=[])
         output = _capture(format_output, product)
         assert "Product" in output
+
+    def test_dispatch_product_release_with_collection(self):
+        data = _legacy(
+            ProductReleaseWithCollection, uuid=UUID, version="1.0.0", created_date="2024-01-01", components=[]
+        )
+        assert "Product Release" in _capture(format_output, data)
 
     def test_dispatch_discover_via_command(self):
         data = [

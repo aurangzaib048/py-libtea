@@ -25,6 +25,7 @@ from libtea.models import (
     PaginatedProductResponse,
     Product,
     ProductRelease,
+    ProductReleaseWithCollection,
     Release,
 )
 
@@ -73,7 +74,7 @@ class TeaClientProtocol(Protocol):
         self, id_type: str, id_value: str, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedProductReleaseResponse: ...
 
-    def get_product_release(self, uuid: str) -> ProductRelease: ...
+    def get_product_release(self, uuid: str) -> ProductReleaseWithCollection: ...
 
     def get_product_release_collection_latest(self, uuid: str) -> Collection: ...
 

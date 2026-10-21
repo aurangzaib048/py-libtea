@@ -160,6 +160,9 @@ if TYPE_CHECKING:
         ProductRelease as ProductRelease,
     )
     from libtea.models import (
+        ProductReleaseWithCollection as ProductReleaseWithCollection,
+    )
+    from libtea.models import (
         Release as Release,
     )
     from libtea.models import (
@@ -235,6 +238,7 @@ __all__ = [
     "PaginatedProductResponse",
     "Product",
     "ProductRelease",
+    "ProductReleaseWithCollection",
     "Release",
     "ReleaseDistribution",
     "TeaEndpoint",
@@ -298,6 +302,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "PaginatedProductResponse": "libtea.models",
     "Product": "libtea.models",
     "ProductRelease": "libtea.models",
+    "ProductReleaseWithCollection": "libtea.models",
     "Release": "libtea.models",
     "ReleaseDistribution": "libtea.models",
     "TeaEndpoint": "libtea.models",

@@ -415,11 +415,28 @@ class Release(_TeaModel):
 class ComponentReleaseWithCollection(_TeaModel):
     """A component release bundled with its latest collection.
 
-    Returned by ``GET /componentRelease/{uuid}``.
+    Returned by ``GET /componentRelease/{uuid}``. TEA 1.0.0 flattens the release
+    fields next to ``latestCollection``; TEA 0.4.0 nests them under ``release``.
+    Both parse into the same ``release`` / ``latest_collection`` shape.
     """
 
     release: Release
     latest_collection: Collection
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unflatten(cls, data: Any, info: ValidationInfo) -> Any:
+        """Wrap the 1.0.0 flattened wire object into ``release`` + ``latestCollection``.
+
+        Skipped in the legacy context (already nested) and for Python-side
+        construction from a ``Release`` instance.
+        """
+        if _is_legacy(info) or not isinstance(data, dict) or isinstance(data.get("release"), Release):
+            return data
+        return {
+            "release": {k: v for k, v in data.items() if k != "latestCollection"},
+            "latestCollection": data.get("latestCollection"),
+        }
 
 
 class Product(_TeaModel):
@@ -448,7 +465,7 @@ class ProductRelease(_TeaModel):
         components: References to the components included in this product release.
     """
 
-    _v1_required = ("product",)
+    _v1_required: ClassVar[tuple[str, ...]] = ("product",)  # widened so subclasses can extend it
 
     uuid: str
     product: str | None = None
@@ -459,6 +476,21 @@ class ProductRelease(_TeaModel):
     pre_release: bool | None = None
     identifiers: tuple[Identifier, ...] = ()
     components: tuple[ComponentRef, ...]
+
+
+class ProductReleaseWithCollection(ProductRelease):
+    """A product release bundled with its latest collection.
+
+    Returned by ``GET /productRelease/{uuid}``. TEA 1.0.0 requires
+    ``latest_collection``; 0.4.0 servers omit it.
+
+    Attributes:
+        latest_collection: The latest collection for this product release.
+    """
+
+    _v1_required = ProductRelease._v1_required + ("latest_collection",)
+
+    latest_collection: Collection | None = None
 
 
 # --- CLE (Common Lifecycle Enumeration) ---
@@ -706,6 +738,7 @@ __all__ = [
     "PaginatedProductResponse",
     "Product",
     "ProductRelease",
+    "ProductReleaseWithCollection",
     "Release",
     "ReleaseDistribution",
     "TeaEndpoint",

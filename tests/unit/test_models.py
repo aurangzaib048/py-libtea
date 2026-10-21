@@ -18,6 +18,7 @@ from libtea.models import (
     CollectionUpdateReasonType,
     ComplianceDocumentType,
     Component,
+    ComponentReleaseWithCollection,
     ErrorResponse,
     ErrorType,
     Identifier,
@@ -28,6 +29,7 @@ from libtea.models import (
     PaginatedProductResponse,
     Product,
     ProductRelease,
+    ProductReleaseWithCollection,
     Release,
     TeiType,
 )
@@ -854,3 +856,49 @@ class TestV1RequiredFields:
 
     def test_fedramp_value(self):
         assert ComplianceDocumentType.FEDRAMP == "FEDRAMP"
+
+
+class TestReleaseWithCollection:
+    def test_component_release_flattened_on_v1(self):
+        r = ComponentReleaseWithCollection.model_validate({**V1_RELEASE, "latestCollection": V1_COLLECTION})
+        assert (r.release.version, r.latest_collection.version) == ("2.24.3", 2)
+
+    def test_component_release_nested_rejected_on_v1(self):
+        with pytest.raises(ValidationError):
+            ComponentReleaseWithCollection.model_validate({"release": V1_RELEASE, "latestCollection": V1_COLLECTION})
+
+    def test_component_release_nested_legacy(self):
+        r = ComponentReleaseWithCollection.model_validate(
+            {"release": V1_RELEASE, "latestCollection": V1_COLLECTION}, context=LEGACY
+        )
+        assert r.release.uuid == COMPONENT_RELEASE
+
+    def test_component_release_requires_latest_collection_on_v1(self):
+        with pytest.raises(ValidationError, match="latestCollection"):
+            ComponentReleaseWithCollection.model_validate(V1_RELEASE)
+
+    def test_component_release_built_from_instances(self):
+        built = ComponentReleaseWithCollection(
+            release=Release.model_validate(V1_RELEASE), latest_collection=Collection.model_validate(V1_COLLECTION)
+        )
+        assert built.latest_collection.version == 2
+
+    def test_product_release_requires_latest_collection_on_v1(self):
+        with pytest.raises(ValidationError, match="latest_collection"):
+            ProductReleaseWithCollection.model_validate(V1_PRODUCT_RELEASE)
+
+    def test_product_release_with_collection_on_v1(self):
+        r = ProductReleaseWithCollection.model_validate({**V1_PRODUCT_RELEASE, "latestCollection": V1_COLLECTION})
+        assert isinstance(r, ProductRelease)
+        assert (r.product, r.latest_collection.version) == (V1_PRODUCT_RELEASE["product"], 2)
+
+    def test_product_release_still_requires_product_on_v1(self):
+        data = {k: v for k, v in V1_PRODUCT_RELEASE.items() if k != "product"}
+        with pytest.raises(ValidationError, match="'product'"):
+            ProductReleaseWithCollection.model_validate({**data, "latestCollection": V1_COLLECTION})
+
+    def test_product_release_without_collection_legacy(self):
+        r = ProductReleaseWithCollection.model_validate(
+            {k: v for k, v in V1_PRODUCT_RELEASE.items() if k != "product"}, context=LEGACY
+        )
+        assert r.latest_collection is None

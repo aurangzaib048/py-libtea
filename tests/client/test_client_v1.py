@@ -262,3 +262,38 @@ def test_legacy_page_size_10000_accepted(legacy):
     )
     legacy.list_products(page_size=10000)
     assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_get_product_release_v1(v1):
+    responses.get(
+        f"{V1_BASE_URL}/productRelease/{PRODUCT_RELEASE}",
+        json={**V1_PRODUCT_RELEASE, "latestCollection": {**V1_COLLECTION, "belongsTo": "PRODUCT_RELEASE"}},
+    )
+    assert v1.get_product_release(PRODUCT_RELEASE).latest_collection.belongs_to == "PRODUCT_RELEASE"
+
+
+@responses.activate
+def test_get_product_release_v1_without_collection_rejected(v1):
+    responses.get(f"{V1_BASE_URL}/productRelease/{PRODUCT_RELEASE}", json=V1_PRODUCT_RELEASE)
+    with pytest.raises(TeaValidationError, match="latest_collection"):
+        v1.get_product_release(PRODUCT_RELEASE)
+
+
+@responses.activate
+def test_get_component_release_v1_flattened(v1):
+    responses.get(
+        f"{V1_BASE_URL}/componentRelease/{COMPONENT_RELEASE}",
+        json={**V1_RELEASE, "latestCollection": V1_COLLECTION},
+    )
+    result = v1.get_component_release(COMPONENT_RELEASE)
+    assert (result.release.component, result.latest_collection.version) == (COMPONENT, 2)
+
+
+@responses.activate
+def test_get_component_release_legacy_nested(legacy):
+    responses.get(
+        f"{LEGACY_BASE_URL}/componentRelease/{COMPONENT_RELEASE}",
+        json={"release": V1_RELEASE, "latestCollection": V1_COLLECTION},
+    )
+    assert legacy.get_component_release(COMPONENT_RELEASE).release.uuid == COMPONENT_RELEASE
