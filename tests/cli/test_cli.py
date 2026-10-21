@@ -6,6 +6,7 @@ import re
 import pytest
 import requests
 import responses
+from responses import matchers
 
 click = pytest.importorskip("click", reason="click not installed (install libtea[cli])")
 
@@ -818,6 +819,31 @@ class TestCLITeiAutoDiscovery:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert len(data) == 1
+
+    @responses.activate
+    def test_discover_auto_extracts_domain_from_tei_uri(self):
+        tei = "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
+        responses.get(
+            "https://example.com/.well-known/tea",
+            json={
+                "schemaVersion": 1,
+                "endpoints": [{"url": "https://api.example.com", "versions": ["0.4.0"]}],
+            },
+        )
+        responses.head("https://api.example.com/v0.4.0", status=200)
+        responses.get(
+            "https://api.example.com/v0.4.0/discovery",
+            match=[matchers.query_param_matcher({"tei": tei})],
+            json=[
+                {
+                    "productReleaseUuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    "servers": [{"rootUrl": "https://tea.example.com", "versions": ["1.0.0"]}],
+                }
+            ],
+        )
+        result = runner.invoke(app, ["--json", "discover", tei])
+        assert result.exit_code == 0
+        assert len(json.loads(result.output)) == 1
 
 
 class TestCLIEntryPointErrors:

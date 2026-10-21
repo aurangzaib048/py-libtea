@@ -1,11 +1,12 @@
 """TEI parsing, .well-known/tea fetching, and SemVer-based endpoint selection.
 
-Implements the TEA discovery flow: parse a TEI URN, fetch the ``.well-known/tea``
+Implements the TEA discovery flow: parse a TEI, fetch the ``.well-known/tea``
 document from the TEI's domain, and select the best-matching endpoint using
 SemVer 2.0.0 comparison and priority-based ordering.
 """
 
 import logging
+import re
 import warnings
 from dataclasses import dataclass
 from typing import Any
@@ -23,6 +24,12 @@ from libtea.models import TeaEndpoint, TeaWellKnown, TeiType
 logger = logging.getLogger("libtea")
 
 _VALID_TEI_TYPES = frozenset(e.value for e in TeiType)
+
+_TEI_URI_PREFIX = "tei://"
+_TEI_URI_TYPE = re.compile(r"[a-z][a-z0-9]*")
+_TEI_EXPECTED_FORMAT = (
+    "Expected format: tei://<domain>/<type>/<identifier> (or legacy urn:tei:<type>:<domain>:<identifier>)"
+)
 
 
 def _endpoint_sort_key(pair: tuple[_SemVer, TeaEndpoint]) -> tuple[_SemVer, float]:
@@ -51,13 +58,35 @@ def _is_valid_domain(domain: str) -> bool:
     return True
 
 
-def parse_tei(tei: str) -> tuple[str, str, str]:
-    """Parse a TEI URN into (type, domain, identifier).
+def _parse_tei_uri(tei: str) -> tuple[str, str, str]:
+    """Parse ``tei://<domain>/<type>/<identifier>``; the type is checked syntactically, not against ``TeiType``."""
+    parts = tei[len(_TEI_URI_PREFIX) :].split("/")
+    if len(parts) == 3:
+        domain, tei_type, identifier = parts
+        # _is_valid_domain also rejects ":" (no port allowed)
+        if (
+            _is_valid_domain(domain)
+            and _TEI_URI_TYPE.fullmatch(tei_type)
+            and identifier
+            and not {"?", "#"} & set(identifier)
+            and "%2f" not in identifier.lower()
+        ):
+            return tei_type, domain, identifier
+    raise TeaDiscoveryError(f"Invalid TEI: {tei!r}. {_TEI_EXPECTED_FORMAT}")
 
-    TEI format: ``urn:tei:<type>:<domain>:<identifier>``
+
+def parse_tei(tei: str) -> tuple[str, str, str]:
+    """Parse a TEI into (type, domain, identifier).
+
+    Two forms are accepted:
+
+    - ``tei://<domain>/<type>/<identifier>`` (TEA 1.0.0). The scheme is case-sensitive, the domain is
+      returned unchanged, any lowercase alphanumeric ``type`` is accepted (the type registry may grow),
+      and the identifier may contain ``:`` but not ``/``, ``%2F``, ``?`` or ``#``.
+    - ``urn:tei:<type>:<domain>:<identifier>`` (TEA 0.4.0), where ``type`` must be a known :class:`TeiType`.
 
     Args:
-        tei: TEI URN string.
+        tei: TEI string.
 
     Returns:
         Tuple of (type, domain, identifier).
@@ -65,9 +94,11 @@ def parse_tei(tei: str) -> tuple[str, str, str]:
     Raises:
         TeaDiscoveryError: If the TEI format is invalid.
     """
+    if tei.startswith(_TEI_URI_PREFIX):
+        return _parse_tei_uri(tei)
     parts = tei.split(":")
     if len(parts) < 5 or parts[0] != "urn" or parts[1] != "tei":
-        raise TeaDiscoveryError(f"Invalid TEI: {tei!r}. Expected format: urn:tei:<type>:<domain>:<identifier>")
+        raise TeaDiscoveryError(f"Invalid TEI: {tei!r}. {_TEI_EXPECTED_FORMAT}")
 
     tei_type = parts[2]
     if tei_type not in _VALID_TEI_TYPES:

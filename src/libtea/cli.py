@@ -181,9 +181,9 @@ def _parse_basic_auth(auth: str | None) -> tuple[str, str] | None:
 
 
 def _domain_from_tei(tei: str | None) -> str | None:
-    """Extract the domain component from a TEI URN for auto-discovery.
+    """Extract the domain component from a TEI (``tei://`` or ``urn:tei:``) for auto-discovery.
 
-    Returns ``None`` if ``tei`` is falsy or not a valid TEI URN.
+    Returns ``None`` if ``tei`` is falsy or not a valid TEI.
     """
     if not tei:
         return None

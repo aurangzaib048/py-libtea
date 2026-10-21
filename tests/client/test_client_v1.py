@@ -62,10 +62,41 @@ class TestLegacyFlagReachesValidation:
     @pytest.mark.parametrize("fixture, base_url, expected", CASES)
     def test_validate_list(self, request, fixture, base_url, expected):
         client = request.getfixturevalue(fixture)
-        responses.get(f"{base_url}/discovery", json=[])
+        responses.get(
+            f"{base_url}/discovery",
+            json=[
+                {
+                    "productReleaseUuid": PRODUCT_RELEASE,
+                    "servers": [{"rootUrl": "https://api.example.com", "versions": ["1.0.0"]}],
+                }
+            ],
+        )
         with patch("libtea.client._validate_list", wraps=_validate_list) as spy:
             client.discover("urn:tei:purl:example.com:pkg:pypi/lib@1.0")
         assert spy.call_args.kwargs == {"legacy": expected}
+
+
+@responses.activate
+def test_discover_passes_tei_verbatim(v1):
+    tei = "tei://Example.com/uuid/x"
+    responses.get(
+        f"{V1_BASE_URL}/discovery",
+        match=[matchers.query_param_matcher({"tei": tei})],
+        json=[
+            {
+                "productReleaseUuid": PRODUCT_RELEASE,
+                "servers": [{"rootUrl": "https://api.example.com", "versions": ["1.0.0"]}],
+            }
+        ],
+    )
+    assert v1.discover(tei)[0].product_release_uuid == PRODUCT_RELEASE
+
+
+@responses.activate
+def test_discover_empty_array_rejected_on_v1(v1):
+    responses.get(f"{V1_BASE_URL}/discovery", json=[])
+    with pytest.raises(TeaValidationError, match="non-empty"):
+        v1.discover("tei://example.com/uuid/x")
 
 
 @responses.activate

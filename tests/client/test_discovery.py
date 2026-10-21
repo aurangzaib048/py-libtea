@@ -94,6 +94,50 @@ class TestParseTei:
         assert identifier == "pkg:maven/org.apache/log4j@2.24.3"
 
 
+class TestParseTeiUri:
+    def test_uuid_tei(self):
+        assert parse_tei("tei://products.example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1") == (
+            "uuid",
+            "products.example.com",
+            "d4d9f54a-abcf-11ee-ac79-1a52914d44b1",
+        )
+
+    def test_hash_identifier_keeps_colon(self):
+        tei = "tei://example.com/hash/SHA-256:fd44efd601f651c8865acf0dfeacb0df19a2b50ec69ead0262096fd2f67197b9"
+        assert parse_tei(tei)[2].startswith("SHA-256:")
+
+    def test_unregistered_type_accepted(self):
+        assert parse_tei("tei://example.com/newtype2/x")[0] == "newtype2"
+
+    def test_domain_not_rewritten(self):
+        assert parse_tei("tei://Example.com/uuid/x")[1] == "Example.com"
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "tei://example.com:8443/uuid/x",
+            "tei://example.com/uuid/a/b",
+            "tei://example.com/uuid/a%2Fb",
+            "tei://example.com/uuid/a%2fb",
+            "tei://example.com/uuid/",
+            "tei://example.com/UUID/x",
+            "tei://example.com/1uuid/x",
+            "tei://example.com/uuid/x?y=1",
+            "tei://example.com/uuid/x#frag",
+            "tei://example.com/uuid",
+            "tei:///uuid/x",
+            "tei://bad_domain.com/uuid/x",
+            "TEI://example.com/uuid/x",
+        ],
+    )
+    def test_rejects_malformed(self, bad):  # Review Focus 5
+        with pytest.raises(TeaDiscoveryError, match="tei://<domain>/<type>/<identifier>"):
+            parse_tei(bad)
+
+    def test_urn_form_still_parsed(self):
+        assert parse_tei("urn:tei:uuid:example.com:abc") == ("uuid", "example.com", "abc")
+
+
 class TestFetchWellKnown:
     @responses.activate
     def test_fetch_well_known_success(self):

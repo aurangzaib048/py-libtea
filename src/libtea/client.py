@@ -228,18 +228,22 @@ class TeaClient:
         """Resolve a TEI to product release UUID(s) via the discovery endpoint.
 
         Args:
-            tei: TEI URN string (e.g. ``urn:tei:purl:example.com:pkg:pypi/lib@1.0``).
+            tei: TEI string, sent verbatim (e.g. ``tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1``
+                or ``urn:tei:purl:example.com:pkg:pypi/lib@1.0``).
 
         Returns:
             List of discovery results, each with a product release UUID and servers.
 
         Raises:
-            TeaValidationError: If the response is malformed.
+            TeaValidationError: If the response is malformed, or empty on a TEA 1.x server.
             TeaConnectionError: On network failure.
         """
         # requests auto-encodes query params — do NOT pre-encode with quote()
         data = self._http.get_json("/discovery", params={"tei": tei})
-        return _validate_list(DiscoveryInfo, data, legacy=self.is_legacy)
+        results = _validate_list(DiscoveryInfo, data, legacy=self.is_legacy)
+        if not results and not self.is_legacy:
+            raise TeaValidationError("Invalid discovery response: expected a non-empty array")
+        return results
 
     # --- Pagination parameters ---
 
