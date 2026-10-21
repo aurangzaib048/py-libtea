@@ -1670,6 +1670,39 @@ class TestDownloadTeiMode:
         assert "All 1 artifact download(s) failed" in _all_output(result)
 
     @responses.activate
+    def test_tei_mode_empty_checksum_value_fails_closed(self, tmp_path):
+        """A checksum with an empty value must fail verification, not be skipped."""
+        tei = "urn:tei:purl:example.com:pkg:pypi/test@1.0"
+        pr_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        artifact_url = "https://cdn.example.com/sbom.json"
+        responses.get(
+            f"{BASE_URL}/discovery",
+            json=[{"productReleaseUuid": pr_uuid, "servers": [{"rootUrl": BASE_URL, "versions": ["0.4.0"]}]}],
+        )
+        responses.get(
+            f"{BASE_URL}/productRelease/{pr_uuid}/collection/latest",
+            json={
+                "uuid": pr_uuid,
+                "version": 1,
+                "artifacts": [
+                    {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
+                        "name": "SBOM",
+                        "formats": [{"url": artifact_url, "checksums": [{"algType": "SHA-256", "algValue": ""}]}],
+                    }
+                ],
+            },
+        )
+        responses.get(artifact_url, body=b'{"bomFormat": "CycloneDX"}')
+        dest = tmp_path / "output"
+        result = runner.invoke(app, ["download", tei, str(dest), "--base-url", BASE_URL])
+        assert result.exit_code == 1
+        assert "Checksum FAILED for sbom.json" in _all_output(result)
+        assert "Downloaded sbom.json" not in _all_output(result)
+        assert not (dest / "sbom.json").exists()
+
+    @responses.activate
     def test_url_mode_still_works(self, tmp_path):
         """Direct URL mode is unchanged."""
         artifact_url = "https://cdn.example.com/sbom.json"

@@ -1057,7 +1057,7 @@ def _download_from_tei(
                 filename = _artifact_filename(fmt, artifact, art_idx)
                 filename = _deduplicate_filename(filename, seen_filenames)
                 dest_path = dest_dir / filename
-                checksums = [cs for cs in fmt.checksums if cs.algorithm_type and cs.algorithm_value]
+                checksums = list(fmt.checksums)
                 attempted += 1
                 if dry_run:
                     if not quiet:

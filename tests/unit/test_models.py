@@ -26,10 +26,19 @@ from libtea.models import (
     PaginatedComponentResponse,
     PaginatedProductResponse,
     Product,
+    ProductRelease,
     Release,
     TeiType,
 )
-from tests.spec_data import COMPONENT_RELEASE, LEGACY, MD5_HEX, V1_ARTIFACT, V1_COLLECTION
+from tests.spec_data import (
+    COMPONENT_RELEASE,
+    LEGACY,
+    MD5_HEX,
+    V1_ARTIFACT,
+    V1_COLLECTION,
+    V1_PRODUCT_RELEASE,
+    V1_RELEASE,
+)
 
 
 class TestEnums:
@@ -754,6 +763,24 @@ class TestV1RequiredFields:
     def test_artifact_requires_formats_entry(self):
         with pytest.raises(ValidationError, match="formats"):
             Artifact.model_validate({**V1_ARTIFACT, "formats": []})
+
+    def test_collection_requires_artifacts_key(self):
+        data = {k: v for k, v in V1_COLLECTION.items() if k != "artifacts"}
+        with pytest.raises(ValidationError, match="artifacts"):
+            Collection.model_validate(data)
+        assert Collection.model_validate({**data, "artifacts": []}).artifacts == ()
+        assert Collection.model_validate(data, context=LEGACY).artifacts == ()
+
+    def test_format_checksums_present_must_not_be_empty(self):
+        for extra in ({}, {"url": "https://x.example.com/a"}):
+            with pytest.raises(ValidationError, match="checksums"):
+                ArtifactFormat.model_validate({"mediaType": "application/json", "checksums": [], **extra})
+        assert ArtifactFormat.model_validate({"mediaType": "application/json"}).checksums == ()
+
+    def test_valid_v1_documents_pass(self):
+        Collection.model_validate(V1_COLLECTION)
+        Release.model_validate(V1_RELEASE)
+        ProductRelease.model_validate(V1_PRODUCT_RELEASE)
 
     def test_md5_rejected_on_v1(self):
         with pytest.raises(ValidationError, match="MD5"):

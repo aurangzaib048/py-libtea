@@ -68,7 +68,7 @@ def test_v1_client_rejects_incomplete_collection():
         f"{V1_BASE_URL}/componentRelease/{COMPONENT_RELEASE}/collection/latest",
         json={"uuid": COMPONENT_RELEASE, "version": 1},
     )
-    with pytest.raises(TeaValidationError, match="Collection"):
+    with pytest.raises(TeaValidationError, match="TEA 1.0.0"):
         TeaClient(V1_BASE_URL).get_component_release_collection_latest(COMPONENT_RELEASE)
 
 

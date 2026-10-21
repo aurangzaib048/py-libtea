@@ -274,6 +274,7 @@ class ArtifactFormat(_TeaModel):
     """A TEA artifact in a specific format with download URL and checksums.
 
     TEA 1.0.0 requires ``media_type``, and at least one checksum when ``url`` is set.
+    ``checksums`` may be omitted but, when present, must not be empty.
     """
 
     _v1_required = ("media_type",)
@@ -286,8 +287,8 @@ class ArtifactFormat(_TeaModel):
 
     def _v1_problems(self) -> list[str]:
         problems = super()._v1_problems()
-        if self.url is not None and not self.checksums:
-            problems.append("'checksums' must not be empty when 'url' is set")
+        if not self.checksums and (self.url is not None or "checksums" in self.model_fields_set):
+            problems.append("'checksums' must not be empty when 'url' is set or 'checksums' is present")
         return problems
 
 
@@ -331,8 +332,9 @@ class Collection(_TeaModel):
 
     The UUID matches the owning component or product release. The version
     integer starts at 1 and increments on each content change.
-    TEA 1.0.0 requires ``uuid``, ``version``, ``created_date``, ``belongs_to`` and
-    ``update_reason``; 0.4.0 requires none and names the creation timestamp ``date``.
+    TEA 1.0.0 requires ``uuid``, ``version``, ``created_date``, ``belongs_to``,
+    ``update_reason`` and the ``artifacts`` key (an empty list is valid); 0.4.0
+    requires none and names the creation timestamp ``date``.
 
     Attributes:
         uuid: UUID of the owning component or product release.
@@ -351,6 +353,12 @@ class Collection(_TeaModel):
     belongs_to: CollectionBelongsTo | None = None
     update_reason: CollectionUpdateReason | None = None
     artifacts: tuple[Artifact, ...] = ()
+
+    def _v1_problems(self) -> list[str]:
+        problems = super()._v1_problems()
+        if "artifacts" not in self.model_fields_set:
+            problems.append("missing required field 'artifacts'")
+        return problems
 
     @model_validator(mode="before")
     @classmethod
