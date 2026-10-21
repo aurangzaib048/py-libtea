@@ -24,7 +24,7 @@ def _all_output(result):
     return out
 
 
-BASE_URL = "https://api.example.com/tea/v1"
+BASE_URL = "https://api.example.com/tea/v0.4.0"
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -513,7 +513,7 @@ class TestCLIAuthOptions:
                 "get-product",
                 "d4d9f54a-abcf-11ee-ac79-1a52914d44b1",
                 "--base-url",
-                "http://example.com/v1",
+                "http://example.com/v0.4.0",
                 "--token",
                 "t",
             ],
@@ -1514,19 +1514,19 @@ class TestConformanceCommand:
             "totalResults": 0,
             "results": [],
         }
-        responses.get("https://tea.example.com/v1/products", json=paginated_empty)
-        responses.get("https://tea.example.com/v1/productReleases", json=paginated_empty)
+        responses.get("https://tea.example.com/v0.4.0/products", json=paginated_empty)
+        responses.get("https://tea.example.com/v0.4.0/productReleases", json=paginated_empty)
         responses.get(
-            "https://tea.example.com/v1/product/00000000-0000-0000-0000-000000000000",
+            "https://tea.example.com/v0.4.0/product/00000000-0000-0000-0000-000000000000",
             status=404,
             json={"error": "OBJECT_UNKNOWN"},
         )
         responses.get(
-            "https://tea.example.com/v1/discovery",
+            "https://tea.example.com/v0.4.0/discovery",
             status=404,
             json={"error": "OBJECT_UNKNOWN"},
         )
-        result = runner.invoke(app, ["conformance", "--base-url", "https://tea.example.com/v1", "--json"])
+        result = runner.invoke(app, ["conformance", "--base-url", "https://tea.example.com/v0.4.0", "--json"])
         assert result.exit_code in (0, 1)
         combined = _all_output(result)
         assert "base_url" in combined or "checks" in combined

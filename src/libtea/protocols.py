@@ -42,6 +42,9 @@ class TeaClientProtocol(Protocol):
     :func:`~libtea._http.probe_endpoint` instead.
     """
 
+    spec_version: str
+    is_legacy: bool
+
     # --- Discovery ---
 
     def discover(self, tei: str) -> list[DiscoveryInfo]: ...

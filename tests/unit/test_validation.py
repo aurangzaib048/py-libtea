@@ -1,14 +1,46 @@
+from typing import Any
+
 import pytest
+from pydantic import BaseModel, ValidationInfo, field_validator
 
 from libtea._validation import (
     _MAX_PAGE_SIZE,
+    _validate,
     _validate_artifact_version,
     _validate_collection_version,
+    _validate_list,
     _validate_page_offset,
     _validate_page_size,
     _validate_path_segment,
 )
 from libtea.exceptions import TeaValidationError
+
+
+class _EchoContext(BaseModel):
+    """Stores the validation context it was validated with in ``n``."""
+
+    n: Any = None
+
+    @field_validator("n", mode="before")
+    @classmethod
+    def _echo(cls, _value: Any, info: ValidationInfo) -> Any:
+        return info.context
+
+
+class TestValidationContext:
+    def test_validate_passes_no_context_by_default(self):
+        assert _validate(_EchoContext, {"n": 1}).n is None
+
+    def test_validate_passes_legacy_context(self):
+        assert _validate(_EchoContext, {"n": 1}, legacy=True).n == {"tea_legacy": True}
+
+    def test_validate_list_passes_no_context_by_default(self):
+        assert [m.n for m in _validate_list(_EchoContext, [{"n": 1}, {"n": 2}])] == [None, None]
+
+    def test_validate_list_passes_legacy_context(self):
+        assert [m.n for m in _validate_list(_EchoContext, [{"n": 1}, {"n": 2}], legacy=True)] == [
+            {"tea_legacy": True}
+        ] * 2
 
 
 class TestValidatePathSegment:

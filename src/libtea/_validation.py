@@ -14,20 +14,26 @@ from libtea.exceptions import TeaValidationError
 _M = TypeVar("_M", bound=BaseModel)
 
 
-def _validate(model_cls: type[_M], data: Any) -> _M:
+def _context(legacy: bool) -> dict[str, bool] | None:
+    # No context means 1.0.0 rules; 0.4.0 compatibility shims key off ``tea_legacy``.
+    return {"tea_legacy": True} if legacy else None
+
+
+def _validate(model_cls: type[_M], data: Any, *, legacy: bool = False) -> _M:
     """Validate a JSON-decoded value against a Pydantic model.
 
     Wraps :meth:`pydantic.BaseModel.model_validate`, converting any
     :class:`~pydantic.ValidationError` into :class:`TeaValidationError`
-    so callers only need to catch the ``TeaError`` hierarchy.
+    so callers only need to catch the ``TeaError`` hierarchy. With
+    ``legacy=True`` the model is validated in the 0.4.0 compatibility context.
     """
     try:
-        return model_cls.model_validate(data)
+        return model_cls.model_validate(data, context=_context(legacy))
     except ValidationError as exc:
         raise TeaValidationError(f"Invalid {model_cls.__name__} response: {exc}") from exc
 
 
-def _validate_list(model_cls: type[_M], data: Any) -> list[_M]:
+def _validate_list(model_cls: type[_M], data: Any, *, legacy: bool = False) -> list[_M]:
     """Validate a JSON array where each element conforms to a Pydantic model.
 
     Raises :class:`TeaValidationError` if ``data`` is not a list or any
@@ -35,8 +41,9 @@ def _validate_list(model_cls: type[_M], data: Any) -> list[_M]:
     """
     if not isinstance(data, list):
         raise TeaValidationError(f"Expected list for {model_cls.__name__}, got {type(data).__name__}")
+    context = _context(legacy)
     try:
-        return [model_cls.model_validate(item) for item in data]
+        return [model_cls.model_validate(item, context=context) for item in data]
     except ValidationError as exc:
         raise TeaValidationError(f"Invalid {model_cls.__name__} response: {exc}") from exc
 

@@ -6,7 +6,7 @@ import responses
 from libtea.client import TeaClient
 from libtea.models import Component, Product, ProductRelease, Release
 
-BASE_URL = "https://api.example.com/tea/v1"
+BASE_URL = "https://api.example.com/tea/v0.4.0"
 
 
 def _product_json(uuid: str, name: str) -> dict:

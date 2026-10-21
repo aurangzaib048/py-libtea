@@ -805,93 +805,93 @@ class TestFromWellKnown:
 class TestProbeEndpoint:
     @responses.activate
     def test_probe_success(self):
-        responses.head("https://api.example.com/v1", status=200)
-        probe_endpoint("https://api.example.com/v1")  # should not raise
+        responses.head("https://api.example.com/v0.4.0", status=200)
+        probe_endpoint("https://api.example.com/v0.4.0")  # should not raise
 
     @responses.activate
     def test_probe_404_triggers_failover(self):
         """404 means wrong path/version — probe should fail to trigger failover."""
-        responses.head("https://api.example.com/v1", status=404)
+        responses.head("https://api.example.com/v0.4.0", status=404)
         with pytest.raises(TeaConnectionError, match="HTTP 404"):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_410_triggers_failover(self):
         """410 Gone means endpoint removed — probe should fail to trigger failover."""
-        responses.head("https://api.example.com/v1", status=410)
+        responses.head("https://api.example.com/v0.4.0", status=410)
         with pytest.raises(TeaConnectionError, match="HTTP 410"):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_401_is_ok(self):
         """401 means auth required but server is reachable — probe should succeed."""
-        responses.head("https://api.example.com/v1", status=401)
-        probe_endpoint("https://api.example.com/v1")  # should not raise
+        responses.head("https://api.example.com/v0.4.0", status=401)
+        probe_endpoint("https://api.example.com/v0.4.0")  # should not raise
 
     @responses.activate
     def test_probe_405_is_ok(self):
         """405 means HEAD not allowed but server is reachable — probe should succeed."""
-        responses.head("https://api.example.com/v1", status=405)
-        probe_endpoint("https://api.example.com/v1")  # should not raise
+        responses.head("https://api.example.com/v0.4.0", status=405)
+        probe_endpoint("https://api.example.com/v0.4.0")  # should not raise
 
     @responses.activate
     def test_probe_trailing_slash_redirect_is_ok(self):
         """Trailing-slash redirect (e.g. Django APPEND_SLASH) should not fail the probe."""
-        responses.head("https://api.example.com/v1", status=301, headers={"Location": "/v1/"})
-        probe_endpoint("https://api.example.com/v1")  # should not raise
+        responses.head("https://api.example.com/v0.4.0", status=301, headers={"Location": "/v0.4.0/"})
+        probe_endpoint("https://api.example.com/v0.4.0")  # should not raise
 
     @responses.activate
     def test_probe_trailing_slash_redirect_absolute_url(self):
         """Trailing-slash redirect with absolute Location header."""
         responses.head(
-            "https://api.example.com/v1",
+            "https://api.example.com/v0.4.0",
             status=301,
-            headers={"Location": "https://api.example.com/v1/"},
+            headers={"Location": "https://api.example.com/v0.4.0/"},
         )
-        probe_endpoint("https://api.example.com/v1")  # should not raise
+        probe_endpoint("https://api.example.com/v0.4.0")  # should not raise
 
     @responses.activate
     def test_probe_cross_path_redirect_raises_connection_error(self):
         """Redirect to a different path should fail."""
-        responses.head("https://api.example.com/v1", status=302, headers={"Location": "/elsewhere"})
+        responses.head("https://api.example.com/v0.4.0", status=302, headers={"Location": "/elsewhere"})
         with pytest.raises(TeaConnectionError, match="redirect"):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_cross_origin_redirect_raises_connection_error(self):
         """Redirect to a different host should fail."""
         responses.head(
-            "https://api.example.com/v1",
+            "https://api.example.com/v0.4.0",
             status=301,
-            headers={"Location": "https://evil.example.com/v1/"},
+            headers={"Location": "https://evil.example.com/v0.4.0/"},
         )
         with pytest.raises(TeaConnectionError, match="redirect"):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_500_raises_server_error(self):
-        responses.head("https://api.example.com/v1", status=500)
+        responses.head("https://api.example.com/v0.4.0", status=500)
         with pytest.raises(TeaServerError):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_connection_error_raises(self):
-        responses.head("https://api.example.com/v1", body=requests.ConnectionError("refused"))
+        responses.head("https://api.example.com/v0.4.0", body=requests.ConnectionError("refused"))
         with pytest.raises(TeaConnectionError):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_timeout_raises(self):
-        responses.head("https://api.example.com/v1", body=requests.Timeout("timed out"))
+        responses.head("https://api.example.com/v0.4.0", body=requests.Timeout("timed out"))
         with pytest.raises(TeaConnectionError):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
     @responses.activate
     def test_probe_request_exception_raises(self):
         """Generic RequestException (not ConnectionError/Timeout) also raises TeaConnectionError."""
-        responses.head("https://api.example.com/v1", body=requests.exceptions.TooManyRedirects("too many"))
+        responses.head("https://api.example.com/v0.4.0", body=requests.exceptions.TooManyRedirects("too many"))
         with pytest.raises(TeaConnectionError):
-            probe_endpoint("https://api.example.com/v1")
+            probe_endpoint("https://api.example.com/v0.4.0")
 
 
 class TestVersionNegotiation:

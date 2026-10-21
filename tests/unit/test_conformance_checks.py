@@ -35,7 +35,7 @@ from libtea.conformance._checks import (
 )
 from libtea.conformance._types import CheckStatus
 
-BASE_URL = "https://api.example.com/tea/v1"
+BASE_URL = "https://api.example.com/tea/v0.4.0"
 
 # Reusable response payloads ---------------------------------------------------
 

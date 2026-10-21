@@ -314,7 +314,7 @@ class TestEmptyBodyErrors:
         assert exc_info.value.error_type is None
 
 
-BASE_URL = "https://api.example.com/tea/v1"
+BASE_URL = "https://api.example.com/tea/v0.4.0"
 
 
 class TestBasicAuth:
@@ -492,10 +492,10 @@ class TestResponseSizeLimit:
     @responses.activate
     def test_rejects_oversized_content_length(self):
         """Content-Length header advertising oversized body triggers rejection."""
-        client = TeaHttpClient("https://api.example.com/v1")
+        client = TeaHttpClient("https://api.example.com/v0.4.0")
         client._max_response_bytes = 5  # Very small limit
         responses.get(
-            "https://api.example.com/v1/product/abc",
+            "https://api.example.com/v0.4.0/product/abc",
             json={"uuid": "abc"},
             status=200,
         )
@@ -506,10 +506,10 @@ class TestResponseSizeLimit:
     @responses.activate
     def test_rejects_oversized_body(self):
         """Body exceeding limit is rejected even without Content-Length."""
-        client = TeaHttpClient("https://api.example.com/v1")
+        client = TeaHttpClient("https://api.example.com/v0.4.0")
         client._max_response_bytes = 100
         large_body = b'{"data": "' + b"x" * 200 + b'"}'
-        responses.get("https://api.example.com/v1/product/abc", body=large_body, status=200)
+        responses.get("https://api.example.com/v0.4.0/product/abc", body=large_body, status=200)
         with pytest.raises(TeaValidationError, match="exceeds limit"):
             client.get_json("/product/abc")
         client.close()
@@ -517,8 +517,8 @@ class TestResponseSizeLimit:
     @responses.activate
     def test_normal_response_passes(self):
         """Normal-sized responses pass the size check."""
-        client = TeaHttpClient("https://api.example.com/v1")
-        responses.get("https://api.example.com/v1/product/abc", json={"uuid": "abc"}, status=200)
+        client = TeaHttpClient("https://api.example.com/v0.4.0")
+        responses.get("https://api.example.com/v0.4.0/product/abc", json={"uuid": "abc"}, status=200)
         result = client.get_json("/product/abc")
         assert result == {"uuid": "abc"}
         client.close()
@@ -536,12 +536,12 @@ class TestGzipDecoding:
         payload = json.dumps({"uuid": "abc", "name": "Gzipped"}).encode()
         compressed = gzip.compress(payload)
         responses.get(
-            "https://api.example.com/v1/product/abc",
+            "https://api.example.com/v0.4.0/product/abc",
             body=compressed,
             headers={"Content-Encoding": "gzip", "Content-Type": "application/json"},
             status=200,
         )
-        client = TeaHttpClient("https://api.example.com/v1")
+        client = TeaHttpClient("https://api.example.com/v0.4.0")
         result = client.get_json("/product/abc")
         assert result["name"] == "Gzipped"
         client.close()

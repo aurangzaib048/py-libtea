@@ -14,6 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import TracebackType
 from typing import Self, TypeVar
+from urllib.parse import urlsplit
+
+from semver import Version
 
 from libtea._hashing import WEAK_HASH_ALGORITHMS
 from libtea._http import TeaHttpClient, probe_endpoint
@@ -52,9 +55,32 @@ from libtea.models import (
 
 logger = logging.getLogger("libtea")
 
-TEA_SPEC_VERSION = "0.4.0"
+TEA_SPEC_VERSION = "1.0.0"
+# Highest first. Major 0 is the legacy (0.4.0) wire format; major 1 is current.
+SUPPORTED_SPEC_VERSIONS: tuple[str, ...] = ("1.0.0", "0.4.0")
+_SUPPORTED_MAJORS = frozenset(Version.parse(v).major for v in SUPPORTED_SPEC_VERSIONS)
 
 _T = TypeVar("_T")
+
+
+def _resolve_spec_version(base_url: str, explicit: str | None) -> Version:
+    """Resolve the TEA spec version: explicit argument, then a ``/v<semver>`` URL suffix, then the default."""
+    candidate = explicit
+    if candidate is None:
+        last_segment = urlsplit(base_url).path.rstrip("/").rpartition("/")[2]
+        if last_segment.startswith("v") and Version.is_valid(last_segment[1:]):
+            candidate = last_segment[1:]
+    if candidate is None:
+        return Version.parse(TEA_SPEC_VERSION)
+    try:
+        version = Version.parse(candidate)
+    except ValueError:
+        version = None
+    if version is None or version.major not in _SUPPORTED_MAJORS:
+        raise ValueError(
+            f"Unsupported TEA spec version {candidate!r}; supported versions: {', '.join(SUPPORTED_SPEC_VERSIONS)}"
+        )
+    return version
 
 
 class TeaClient:
@@ -74,6 +100,13 @@ class TeaClient:
         timeout: Request timeout in seconds (default 30).
         max_retries: Number of automatic retries on 5xx responses (default 3).
         backoff_factor: Exponential backoff multiplier between retries (default 0.5).
+        spec_version: TEA spec SemVer the server speaks. Defaults to the ``/v<semver>``
+            suffix of ``base_url`` when present, else :data:`TEA_SPEC_VERSION`. Major 0
+            (``0.4.0``) selects the legacy wire format; major 1 selects 1.0.0.
+
+    Raises:
+        ValueError: If the resolved spec version is not valid SemVer or its major
+            version is not supported.
     """
 
     def __init__(
@@ -87,7 +120,11 @@ class TeaClient:
         backoff_factor: float = 0.5,
         allow_private_ips: bool = False,
         cache_ttl: float | None = None,
+        spec_version: str | None = None,
     ):
+        resolved = _resolve_spec_version(base_url, spec_version)
+        self.spec_version: str = str(resolved)
+        self.is_legacy: bool = resolved.major == 0
         self._allow_private_ips = allow_private_ips
         self._http = TeaHttpClient(
             base_url=base_url,
@@ -107,7 +144,7 @@ class TeaClient:
         token: str | None = None,
         basic_auth: tuple[str, str] | None = None,
         timeout: float = 30.0,
-        version: str = TEA_SPEC_VERSION,
+        version: str = "0.4.0",
         scheme: str = "https",
         port: int | None = None,
         max_retries: int = 3,
@@ -127,7 +164,7 @@ class TeaClient:
             token: Optional bearer token.
             basic_auth: Optional ``(username, password)`` tuple.
             timeout: Request timeout in seconds (default 30).
-            version: TEA spec SemVer to match against (default: library's built-in version).
+            version: TEA spec SemVer to match against (default ``0.4.0``).
             scheme: URL scheme for discovery — ``"https"`` (default) or ``"http"``.
             port: Optional port for ``.well-known`` resolution.
             max_retries: Retry count on 5xx (default 3).
@@ -194,7 +231,7 @@ class TeaClient:
         """
         # requests auto-encodes query params — do NOT pre-encode with quote()
         data = self._http.get_json("/discovery", params={"tei": tei})
-        return _validate_list(DiscoveryInfo, data)
+        return _validate_list(DiscoveryInfo, data, legacy=self.is_legacy)
 
     # --- Products ---
 
@@ -214,7 +251,7 @@ class TeaClient:
             "/products",
             params={"pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedProductResponse, data)
+        return _validate(PaginatedProductResponse, data, legacy=self.is_legacy)
 
     def search_products(
         self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
@@ -236,7 +273,7 @@ class TeaClient:
             "/products",
             params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedProductResponse, data)
+        return _validate(PaginatedProductResponse, data, legacy=self.is_legacy)
 
     def get_product(self, uuid: str) -> Product:
         """Get a TEA product by UUID.
@@ -248,7 +285,7 @@ class TeaClient:
             The product with its identifiers.
         """
         data = self._http.get_json(f"/product/{_validate_path_segment(uuid)}")
-        return _validate(Product, data)
+        return _validate(Product, data, legacy=self.is_legacy)
 
     def get_product_releases(
         self, uuid: str, *, page_offset: int = 0, page_size: int = 100
@@ -269,7 +306,7 @@ class TeaClient:
             f"/product/{_validate_path_segment(uuid)}/releases",
             params={"pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedProductReleaseResponse, data)
+        return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
     # --- Product Releases ---
 
@@ -289,7 +326,7 @@ class TeaClient:
             "/productReleases",
             params={"pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedProductReleaseResponse, data)
+        return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
     def search_product_releases(
         self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
@@ -311,7 +348,7 @@ class TeaClient:
             "/productReleases",
             params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedProductReleaseResponse, data)
+        return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
     def get_product_release(self, uuid: str) -> ProductRelease:
         """Get a product release by UUID.
@@ -323,7 +360,7 @@ class TeaClient:
             The product release with its component references.
         """
         data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}")
-        return _validate(ProductRelease, data)
+        return _validate(ProductRelease, data, legacy=self.is_legacy)
 
     def get_product_release_collection_latest(self, uuid: str) -> Collection:
         """Get the latest collection for a product release.
@@ -335,7 +372,7 @@ class TeaClient:
             The latest collection with its artifacts.
         """
         data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}/collection/latest")
-        return _validate(Collection, data)
+        return _validate(Collection, data, legacy=self.is_legacy)
 
     def get_product_release_collections(self, uuid: str) -> list[Collection]:
         """Get all collection versions for a product release.
@@ -347,7 +384,7 @@ class TeaClient:
             List of all collection versions.
         """
         data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}/collections")
-        return _validate_list(Collection, data)
+        return _validate_list(Collection, data, legacy=self.is_legacy)
 
     def get_product_release_collection(self, uuid: str, version: int) -> Collection:
         """Get a specific collection version for a product release.
@@ -361,7 +398,7 @@ class TeaClient:
         """
         _validate_collection_version(version)
         data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}/collection/{version}")
-        return _validate(Collection, data)
+        return _validate(Collection, data, legacy=self.is_legacy)
 
     # --- Components ---
 
@@ -375,7 +412,7 @@ class TeaClient:
             The component with its identifiers.
         """
         data = self._http.get_json(f"/component/{_validate_path_segment(uuid)}")
-        return _validate(Component, data)
+        return _validate(Component, data, legacy=self.is_legacy)
 
     def get_component_releases(self, uuid: str) -> list[Release]:
         """Get all releases for a component.
@@ -389,7 +426,7 @@ class TeaClient:
             List of component releases.
         """
         data = self._http.get_json(f"/component/{_validate_path_segment(uuid)}/releases")
-        return _validate_list(Release, data)
+        return _validate_list(Release, data, legacy=self.is_legacy)
 
     def list_components(self, *, page_offset: int = 0, page_size: int = 100) -> PaginatedComponentResponse:
         """List all components (no identifier filter).
@@ -407,7 +444,7 @@ class TeaClient:
             "/components",
             params={"pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedComponentResponse, data)
+        return _validate(PaginatedComponentResponse, data, legacy=self.is_legacy)
 
     def search_components(
         self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
@@ -429,7 +466,7 @@ class TeaClient:
             "/components",
             params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedComponentResponse, data)
+        return _validate(PaginatedComponentResponse, data, legacy=self.is_legacy)
 
     # --- Component Releases ---
 
@@ -443,7 +480,7 @@ class TeaClient:
             The release bundled with its latest collection of artifacts.
         """
         data = self._http.get_json(f"/componentRelease/{_validate_path_segment(uuid)}")
-        return _validate(ComponentReleaseWithCollection, data)
+        return _validate(ComponentReleaseWithCollection, data, legacy=self.is_legacy)
 
     def get_component_release_collection_latest(self, uuid: str) -> Collection:
         """Get the latest collection for a component release.
@@ -455,7 +492,7 @@ class TeaClient:
             The latest collection with its artifacts.
         """
         data = self._http.get_json(f"/componentRelease/{_validate_path_segment(uuid)}/collection/latest")
-        return _validate(Collection, data)
+        return _validate(Collection, data, legacy=self.is_legacy)
 
     def get_component_release_collections(self, uuid: str) -> list[Collection]:
         """Get all collection versions for a component release.
@@ -467,7 +504,7 @@ class TeaClient:
             List of all collection versions.
         """
         data = self._http.get_json(f"/componentRelease/{_validate_path_segment(uuid)}/collections")
-        return _validate_list(Collection, data)
+        return _validate_list(Collection, data, legacy=self.is_legacy)
 
     def get_component_release_collection(self, uuid: str, version: int) -> Collection:
         """Get a specific collection version for a component release.
@@ -481,7 +518,7 @@ class TeaClient:
         """
         _validate_collection_version(version)
         data = self._http.get_json(f"/componentRelease/{_validate_path_segment(uuid)}/collection/{version}")
-        return _validate(Collection, data)
+        return _validate(Collection, data, legacy=self.is_legacy)
 
     def list_component_releases(
         self, *, page_offset: int = 0, page_size: int = 100
@@ -501,7 +538,7 @@ class TeaClient:
             "/componentReleases",
             params={"pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedComponentReleaseResponse, data)
+        return _validate(PaginatedComponentReleaseResponse, data, legacy=self.is_legacy)
 
     def search_component_releases(
         self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
@@ -523,7 +560,7 @@ class TeaClient:
             "/componentReleases",
             params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
         )
-        return _validate(PaginatedComponentReleaseResponse, data)
+        return _validate(PaginatedComponentReleaseResponse, data, legacy=self.is_legacy)
 
     # --- CLE ---
 
@@ -537,7 +574,7 @@ class TeaClient:
             The CLE document with lifecycle events and optional definitions.
         """
         data = self._http.get_json(f"/product/{_validate_path_segment(uuid)}/cle")
-        return _validate(CLE, data)
+        return _validate(CLE, data, legacy=self.is_legacy)
 
     def get_product_release_cle(self, uuid: str) -> CLE:
         """Get CLE data for a product release.
@@ -549,7 +586,7 @@ class TeaClient:
             The CLE document with lifecycle events and optional definitions.
         """
         data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}/cle")
-        return _validate(CLE, data)
+        return _validate(CLE, data, legacy=self.is_legacy)
 
     def get_component_cle(self, uuid: str) -> CLE:
         """Get CLE data for a component.
@@ -561,7 +598,7 @@ class TeaClient:
             The CLE document with lifecycle events and optional definitions.
         """
         data = self._http.get_json(f"/component/{_validate_path_segment(uuid)}/cle")
-        return _validate(CLE, data)
+        return _validate(CLE, data, legacy=self.is_legacy)
 
     def get_component_release_cle(self, uuid: str) -> CLE:
         """Get CLE data for a component release.
@@ -573,7 +610,7 @@ class TeaClient:
             The CLE document with lifecycle events and optional definitions.
         """
         data = self._http.get_json(f"/componentRelease/{_validate_path_segment(uuid)}/cle")
-        return _validate(CLE, data)
+        return _validate(CLE, data, legacy=self.is_legacy)
 
     # --- Artifacts ---
 
@@ -587,7 +624,7 @@ class TeaClient:
             The artifact with its formats and download URLs.
         """
         data = self._http.get_json(f"/artifact/{_validate_path_segment(uuid)}/latest")
-        return _validate(Artifact, data)
+        return _validate(Artifact, data, legacy=self.is_legacy)
 
     def get_artifact_version(self, uuid: str, version: int) -> Artifact:
         """Get a specific version of artifact metadata by UUID.
@@ -601,7 +638,7 @@ class TeaClient:
         """
         _validate_artifact_version(version)
         data = self._http.get_json(f"/artifact/{_validate_path_segment(uuid)}/{version}")
-        return _validate(Artifact, data)
+        return _validate(Artifact, data, legacy=self.is_legacy)
 
     def download_artifact(
         self,
