@@ -355,6 +355,28 @@ class TestErrorTypeFromBody:
         assert exc.value.error_type is None
 
     @responses.activate
+    @pytest.mark.parametrize("status, exc_type", [(400, TeaRequestError), (404, TeaNotFoundError)])
+    def test_long_message_keeps_error_type(self, http_client, status, exc_type):
+        """A body past the 200-char snippet limit still yields its error type; the message stays truncated."""
+        body = {"error": "INVALID_PAGE_TOKEN", "message": "m" * 500}
+        responses.get(f"{LEGACY_BASE_URL}/products", status=status, json=body)
+        with pytest.raises(exc_type) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type == "INVALID_PAGE_TOKEN"
+        if exc_type is TeaRequestError:
+            assert "(truncated)" in str(exc.value)
+            assert "m" * 300 not in str(exc.value)
+
+    @responses.activate
+    def test_error_key_past_read_bound_not_found(self, http_client):
+        """Only the first 4 KiB of a 4xx body is read, so an ``error`` key after it is not seen."""
+        body = '{"padding": "' + "x" * 5000 + '", "error": "INVALID_REQUEST"}'
+        responses.get(f"{LEGACY_BASE_URL}/products", status=400, body=body)
+        with pytest.raises(TeaRequestError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type is None
+
+    @responses.activate
     def test_3xx_has_no_error_type(self, http_client):
         responses.get(f"{LEGACY_BASE_URL}/products", status=301)
         with pytest.raises(TeaRequestError) as exc:

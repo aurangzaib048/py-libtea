@@ -35,6 +35,8 @@ logger = logging.getLogger("libtea")
 
 _MAX_DOWNLOAD_REDIRECTS = 10
 _ERROR_BODY_SNIPPET_BYTES = 200
+# A TEA error body may carry a long `message`; read enough to parse it so `error` is not lost to the snippet cut.
+_ERROR_BODY_PARSE_BYTES = 4096
 _DOWNLOAD_CHUNK_SIZE = 8192
 
 
@@ -375,19 +377,20 @@ class TeaHttpClient:
 
     @staticmethod
     def _read_error_body(response: requests.Response) -> bytes:
-        """Read a bounded snippet of the response body for error messages.
+        """Read a bounded prefix of the response body for error messages and TEA error parsing.
 
-        Returns up to ``_ERROR_BODY_SNIPPET_BYTES + 1`` bytes so callers can
-        detect truncation.  Falls back to ``response.content`` when the raw
-        stream is empty (e.g. already consumed by the transport layer).
+        Returns up to ``_ERROR_BODY_PARSE_BYTES`` bytes; callers compare the
+        length with ``_ERROR_BODY_SNIPPET_BYTES`` to detect a truncated snippet.
+        Falls back to ``response.content`` when the raw stream is empty
+        (e.g. already consumed by the transport layer).
         """
-        limit = _ERROR_BODY_SNIPPET_BYTES
+        limit = _ERROR_BODY_PARSE_BYTES
         try:
             if response.raw:
                 response.raw.decode_content = True
-            raw_bytes = response.raw.read(limit + 1) if response.raw else b""
+            raw_bytes = response.raw.read(limit) if response.raw else b""
             if not raw_bytes:
-                raw_bytes = response.content[: limit + 1]
+                raw_bytes = response.content[:limit]
         except Exception:
             raw_bytes = b""
         return raw_bytes

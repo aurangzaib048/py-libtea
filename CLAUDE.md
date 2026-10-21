@@ -67,7 +67,7 @@ conformance/         Conformance test suite (optional dependency: pytest)
 - `_validation._validate()` wraps Pydantic `ValidationError` into `TeaValidationError` so all client errors are `TeaError` subclasses
 - Endpoint failover: `from_well_known()` probes candidates in priority order, skipping unreachable ones
 - `probe_endpoint()` lives in `_http.py` (not `client.py`) to maintain the HTTP layer boundary
-- `_raise_for_status()` uses bounded reads (201 bytes) for error body snippets to avoid memory issues on streaming responses
+- `_raise_for_status()` reads 4xx bodies once, bounded to 4 KiB, to parse the TEA `error` value (`_tea_error_type`); the message snippet is cut to 200 characters. This avoids memory issues on streaming responses
 - CLI formatters in `_cli_fmt.py` escape all server-controlled strings with `rich.markup.escape()` to prevent Rich markup injection
 - Conformance checks run sequentially; earlier checks populate `CheckContext` with discovered UUIDs for later checks
 - `from __future__ import annotations` is safe in conformance modules (no Pydantic models, only dataclasses)
