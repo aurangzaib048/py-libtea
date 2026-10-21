@@ -168,6 +168,8 @@ class TeaClient:
         candidate is tried (per TEA spec: "MUST retry ... with the next endpoint").
         The API path uses each endpoint's version string exactly as advertised
         (build metadata included, e.g. ``/v1.0.0+build.5``).
+        With the default ``version=None`` the candidates span every supported version,
+        highest first, so failover can also fall back from ``1.0.0`` to ``0.4.0``.
 
         Args:
             domain: Domain name to resolve (e.g. ``tea.example.com``).
@@ -195,34 +197,36 @@ class TeaClient:
                 version is not one this client supports.
         """
         well_known = fetch_well_known(domain, timeout=timeout, scheme=scheme, port=port)
-        if version is not None:
-            best = select_best_endpoint(well_known, version)
-        else:
-            for wanted in SUPPORTED_SPEC_VERSIONS:
-                try:
-                    best = select_best_endpoint(well_known, wanted)
-                    break
-                except TeaDiscoveryError:
-                    continue
-            else:
-                offered = sorted({v for ep in well_known.endpoints for v in ep.versions})
-                raise TeaDiscoveryError(
-                    f"No compatible endpoint found for any version tried {list(SUPPORTED_SPEC_VERSIONS)}. "
-                    f"Available versions: {offered}"
-                )
-        matched_version = best.matched_version
-        try:
-            _resolve_spec_version(best.endpoint.url, matched_version)
-        except ValueError as exc:
-            raise TeaDiscoveryError(f"Cannot use negotiated version {matched_version!r}: {exc}") from exc
-        # Get all endpoints that advertise the matched version (exact match) for failover
-        candidates = select_endpoints(well_known, matched_version)
+        # Ordered (endpoint URL, advertised version) attempts: highest version first, then endpoint priority.
+        # Without an explicit ``version`` every supported version contributes, so failover can cross versions.
+        wanted_versions = (version,) if version is not None else SUPPORTED_SPEC_VERSIONS
+        attempts: dict[tuple[str, str], None] = {}  # insertion-ordered set
+        for wanted in wanted_versions:
+            try:
+                best = select_best_endpoint(well_known, wanted)
+            except TeaDiscoveryError:
+                if version is not None:
+                    raise
+                continue
+            matched_version = best.matched_version
+            try:
+                # Rejects an unsupported version (possible with an explicit ``version``) before any probe.
+                _resolve_spec_version(best.endpoint.url, matched_version)
+            except ValueError as exc:
+                raise TeaDiscoveryError(f"Cannot use negotiated version {matched_version!r}: {exc}") from exc
+            for endpoint in select_endpoints(well_known, matched_version):
+                # Build metadata does not affect precedence, so each endpoint may spell the version differently.
+                attempts[(endpoint.url, _advertised_version(endpoint, matched_version))] = None
+        if not attempts:
+            offered = sorted({v for ep in well_known.endpoints for v in ep.versions})
+            raise TeaDiscoveryError(
+                f"No compatible endpoint found for any version tried {list(SUPPORTED_SPEC_VERSIONS)}. "
+                f"Available versions: {offered}"
+            )
 
         errors: list[tuple[str, Exception]] = []
-        for endpoint in candidates:
-            # Build metadata does not affect precedence, so each endpoint may spell the version differently.
-            advertised = _advertised_version(endpoint, matched_version)
-            base_url = f"{endpoint.url.rstrip('/')}/v{advertised}"
+        for url, advertised in attempts:
+            base_url = f"{url.rstrip('/')}/v{advertised}"
             try:
                 probe_endpoint(base_url, timeout=min(timeout, 5.0))
             except (TeaConnectionError, TeaServerError) as exc:
@@ -241,12 +245,8 @@ class TeaClient:
                 spec_version=advertised,
             )
 
-        if errors:
-            summary = "; ".join(f"{url}: {exc}" for url, exc in errors)
-            raise TeaDiscoveryError(
-                f"All {len(errors)} endpoint(s) failed for version {matched_version!r}: {summary}"
-            ) from errors[-1][1]
-        raise TeaDiscoveryError(f"No reachable endpoint found for version {matched_version!r}")  # pragma: no cover
+        summary = "; ".join(f"{url}: {exc}" for url, exc in errors)
+        raise TeaDiscoveryError(f"All {len(errors)} endpoint(s) failed: {summary}") from errors[-1][1]
 
     # --- Discovery ---
 

@@ -867,12 +867,55 @@ class TestEndpointNegotiation:
         ]
 
     @responses.activate
+    def test_fails_over_across_supported_versions(self):
+        responses.head("https://a.example.com/v1.0.0", status=500)
+        responses.head("https://b.example.com/v0.4.0", status=200)
+        client = self._discover(
+            {"url": "https://a.example.com", "versions": ["1.0.0"]},
+            {"url": "https://b.example.com", "versions": ["0.4.0"]},
+        )
+        assert client.spec_version == "0.4.0"
+        assert client.is_legacy is True
+        assert [c.request.url for c in responses.calls[1:]] == [
+            "https://a.example.com/v1.0.0",
+            "https://b.example.com/v0.4.0",
+        ]
+
+    @responses.activate
+    def test_higher_version_beats_higher_priority(self):
+        responses.head("https://new.example.com/v1.0.0", status=200)
+        client = self._discover(
+            {"url": "https://old.example.com", "versions": ["0.4.0"], "priority": 1.0},
+            {"url": "https://new.example.com", "versions": ["1.0.0"], "priority": 0.1},
+        )
+        assert client.spec_version == "1.0.0"
+        assert [c.request.url for c in responses.calls[1:]] == ["https://new.example.com/v1.0.0"]
+
+    @responses.activate
+    def test_all_attempts_fail_lists_every_url_tried(self):
+        responses.head("https://a.example.com/v1.0.0", status=500)
+        responses.head("https://b.example.com/v0.4.0", body=requests.ConnectionError("refused"))
+        with pytest.raises(TeaDiscoveryError, match="All 2 endpoint") as exc_info:
+            self._discover(
+                {"url": "https://a.example.com", "versions": ["1.0.0"]},
+                {"url": "https://b.example.com", "versions": ["0.4.0"]},
+            )
+        assert "https://a.example.com/v1.0.0" in str(exc_info.value)
+        assert "https://b.example.com/v0.4.0" in str(exc_info.value)
+
+    @responses.activate
     def test_explicit_version_kept(self):
         responses.head(f"{self.API}/v0.4.0", status=200)
         client = self._discover({"url": self.API, "versions": ["1.0.0", "0.4.0"]}, version="0.4.0")
         assert client.spec_version == "0.4.0"
         assert client.is_legacy is True
         assert responses.calls[1].request.url == f"{self.API}/v0.4.0"
+
+    @responses.activate
+    def test_explicit_version_without_match_does_not_try_other_versions(self):
+        with pytest.raises(TeaDiscoveryError, match="No .*endpoint found for version '1.0.0'"):
+            self._discover({"url": self.API, "versions": ["0.4.0"]}, version="1.0.0")
+        assert len(responses.calls) == 1
 
     @responses.activate
     def test_unsupported_explicit_version_raises_discovery_error_without_probing(self):
