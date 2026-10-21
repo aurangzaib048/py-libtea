@@ -81,11 +81,15 @@ def _pagination_header(
     console: Console,
 ) -> None:
     """Render a dim pagination summary line."""
-    if not data.results:
+    if data.total_results is None:  # TEA 1.x: no totals, only a continuation token
+        console.print(Text(f"{len(data.results)} result(s)", style="dim"))
+        if data.has_next:
+            console.print(Text(f"More results: --page-token {data.next_page_token}", style="dim"))
+    elif not data.results:
         console.print(Text(f"No results (total: {data.total_results})", style="dim"))
     else:
-        end = data.page_start_index + len(data.results)
-        console.print(Text(f"Results {data.page_start_index + 1}-{end} of {data.total_results}", style="dim"))
+        start = data.page_start_index or 0  # 0.4.0 default
+        console.print(Text(f"Results {start + 1}-{start + len(data.results)} of {data.total_results}", style="dim"))
 
 
 def _distributions_table(distributions: Sequence[ReleaseDistribution], *, console: Console) -> None:

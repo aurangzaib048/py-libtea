@@ -95,7 +95,7 @@ tea-cli inspect [--max-components N] TEI
 Search for products by identifier.
 
 ```
-tea-cli search-products --id-type TYPE --id-value VALUE [--page-offset N] [--page-size N]
+tea-cli search-products --id-type TYPE --id-value VALUE [--page-token TOKEN] [--page-size N]
 ```
 
 **Options:**
@@ -104,8 +104,8 @@ tea-cli search-products --id-type TYPE --id-value VALUE [--page-offset N] [--pag
 |--------|-------------|
 | `--id-type` *TYPE* | Identifier type: `CPE`, `TEI`, or `PURL`. |
 | `--id-value` *VALUE* | Identifier value to search for. |
-| `--page-offset` *N* | Page offset for pagination (default: 0). |
-| `--page-size` *N* | Page size for pagination (default: 100). |
+| `--page-token` *TOKEN* | `nextPageToken` from the previous page; an integer offset on TEA 0.x servers (default: first page). |
+| `--page-size` *N* | Page size for pagination (default: 100; max 100 on TEA 1.x). |
 
 ---
 
@@ -114,7 +114,7 @@ tea-cli search-products --id-type TYPE --id-value VALUE [--page-offset N] [--pag
 Search for product releases by identifier.
 
 ```
-tea-cli search-releases --id-type TYPE --id-value VALUE [--page-offset N] [--page-size N]
+tea-cli search-releases --id-type TYPE --id-value VALUE [--page-token TOKEN] [--page-size N]
 ```
 
 Options are the same as `search-products`.
@@ -136,15 +136,15 @@ tea-cli get-product UUID
 List releases for a product UUID.
 
 ```
-tea-cli get-product-releases UUID [--page-offset N] [--page-size N]
+tea-cli get-product-releases UUID [--page-token TOKEN] [--page-size N]
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--page-offset` *N* | Page offset for pagination (default: 0). |
-| `--page-size` *N* | Page size for pagination (default: 100). |
+| `--page-token` *TOKEN* | `nextPageToken` from the previous page; an integer offset on TEA 0.x servers (default: first page). |
+| `--page-size` *N* | Page size for pagination (default: 100; max 100 on TEA 1.x). |
 
 ---
 
@@ -222,7 +222,7 @@ tea-cli list-collections [--component] UUID
 Search for components by identifier.
 
 ```
-tea-cli search-components --id-type TYPE --id-value VALUE [--page-offset N] [--page-size N]
+tea-cli search-components --id-type TYPE --id-value VALUE [--page-token TOKEN] [--page-size N]
 ```
 
 Options are the same as `search-products`.
@@ -234,7 +234,7 @@ Options are the same as `search-products`.
 Search for component releases by identifier.
 
 ```
-tea-cli search-component-releases --id-type TYPE --id-value VALUE [--page-offset N] [--page-size N]
+tea-cli search-component-releases --id-type TYPE --id-value VALUE [--page-token TOKEN] [--page-size N]
 ```
 
 Options are the same as `search-products`.

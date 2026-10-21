@@ -2,18 +2,24 @@ from unittest.mock import patch
 
 import pytest
 import responses
+from responses import matchers
 
 from libtea._validation import _validate, _validate_list
 from libtea.client import TeaClient
-from libtea.exceptions import TeaValidationError
+from libtea.exceptions import TeaServerError, TeaValidationError
 from tests.spec_data import (
     ARTIFACT,
+    COMPONENT,
     COMPONENT_RELEASE,
     LEGACY_BASE_URL,
     MD5_HEX,
     PRODUCT,
+    PRODUCT_RELEASE,
     V1_ARTIFACT,
     V1_BASE_URL,
+    V1_COLLECTION,
+    V1_PRODUCT_RELEASE,
+    V1_RELEASE,
     product,
 )
 
@@ -81,3 +87,136 @@ def test_v1_artifact_with_md5_rejected():
     responses.get(f"{V1_BASE_URL}/artifact/{ARTIFACT}/latest", json=art)
     with pytest.raises(TeaValidationError, match="MD5"):
         TeaClient(V1_BASE_URL).get_artifact(ARTIFACT)
+
+
+# --- Token pagination ---
+
+
+@responses.activate
+def test_first_page_omits_token(v1):
+    responses.get(
+        f"{V1_BASE_URL}/products",
+        match=[matchers.query_param_matcher({"pageSize": "100"})],
+        json={"hasNext": False, "results": []},
+    )
+    assert v1.list_products().has_next is False
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_page_token_sent(v1):
+    responses.get(
+        f"{V1_BASE_URL}/products",
+        match=[matchers.query_param_matcher({"pageSize": "100", "pageToken": "tok-1"})],
+        json={"hasNext": False, "results": []},
+    )
+    v1.list_products(page_token="tok-1")
+    assert len(responses.calls) == 1
+
+
+def test_page_size_capped_at_100_on_v1(v1):
+    with pytest.raises(TeaValidationError, match="between 1 and 100"):
+        v1.list_products(page_size=101)
+
+
+@responses.activate
+def test_iter_follows_tokens(v1):
+    responses.get(
+        f"{V1_BASE_URL}/productReleases",
+        match=[matchers.query_param_matcher({"idType": "PURL", "idValue": "pkg:x", "pageSize": "100"})],
+        json={"hasNext": True, "nextPageToken": "t2", "results": [V1_PRODUCT_RELEASE]},
+    )
+    responses.get(
+        f"{V1_BASE_URL}/productReleases",
+        match=[
+            matchers.query_param_matcher({"idType": "PURL", "idValue": "pkg:x", "pageSize": "100", "pageToken": "t2"})
+        ],
+        json={"hasNext": False, "results": [V1_PRODUCT_RELEASE]},
+    )
+    assert len(list(v1.iter_product_releases("PURL", "pkg:x"))) == 2
+
+
+@responses.activate
+def test_iter_raises_on_repeated_token(v1):  # Review Focus 1
+    responses.get(
+        f"{V1_BASE_URL}/products",
+        json={"hasNext": True, "nextPageToken": "same", "results": [product(PRODUCT, "P")]},
+    )
+    with pytest.raises(TeaServerError, match="repeated"):
+        list(v1.iter_products("PURL", "pkg:x"))
+
+
+@responses.activate
+def test_iter_stops_on_empty_page(v1):
+    responses.get(f"{V1_BASE_URL}/products", json={"hasNext": True, "nextPageToken": "t", "results": []})
+    assert list(v1.iter_products("PURL", "pkg:x")) == []
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_component_releases_collects_pages_on_v1(v1):
+    url = f"{V1_BASE_URL}/component/{COMPONENT}/releases"
+    responses.get(
+        url,
+        match=[matchers.query_param_matcher({"pageSize": "100"})],
+        json={"hasNext": True, "nextPageToken": "n", "results": [V1_RELEASE]},
+    )
+    responses.get(
+        url,
+        match=[matchers.query_param_matcher({"pageSize": "100", "pageToken": "n"})],
+        json={"hasNext": False, "results": [V1_RELEASE]},
+    )
+    assert len(v1.get_component_releases(COMPONENT)) == 2
+
+
+@responses.activate
+@pytest.mark.parametrize(
+    ("method", "path", "uuid"),
+    [
+        ("get_product_release_collections", "productRelease", PRODUCT_RELEASE),
+        ("get_component_release_collections", "componentRelease", COMPONENT_RELEASE),
+    ],
+)
+def test_collections_collects_pages_on_v1(v1, method, path, uuid):
+    url = f"{V1_BASE_URL}/{path}/{uuid}/collections"
+    responses.get(
+        url,
+        match=[matchers.query_param_matcher({"pageSize": "100"})],
+        json={"hasNext": True, "nextPageToken": "n", "results": [V1_COLLECTION]},
+    )
+    responses.get(
+        url,
+        match=[matchers.query_param_matcher({"pageSize": "100", "pageToken": "n"})],
+        json={"hasNext": False, "results": [V1_COLLECTION]},
+    )
+    assert len(getattr(v1, method)(uuid)) == 2
+
+
+@responses.activate
+def test_legacy_token_maps_to_offset(legacy):
+    responses.get(
+        f"{LEGACY_BASE_URL}/products",
+        match=[matchers.query_param_matcher({"pageOffset": "200", "pageSize": "100"})],
+        json={
+            "timestamp": "2024-03-20T15:30:00Z",
+            "pageStartIndex": 200,
+            "pageSize": 100,
+            "totalResults": 200,
+            "results": [],
+        },
+    )
+    legacy.list_products(page_token="200")
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+@pytest.mark.parametrize("token", ["abc", "-1", "²", ""])
+def test_legacy_non_numeric_token_rejected(legacy, token):  # Review Focus 2
+    with pytest.raises(TeaValidationError, match="integer offset"):
+        legacy.list_products(page_token=token)
+    assert len(responses.calls) == 0
+
+
+def test_legacy_page_size_allows_10000(legacy):
+    with pytest.raises(TeaValidationError, match="between 1 and 10000"):
+        legacy.list_products(page_size=10001)

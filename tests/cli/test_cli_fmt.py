@@ -57,7 +57,7 @@ from libtea.models import (  # noqa: E402
     ReleaseDistribution,
     TeaServerInfo,
 )
-from tests.spec_data import LEGACY  # noqa: E402
+from tests.spec_data import LEGACY, product  # noqa: E402
 
 
 def _legacy(model_cls, **fields):
@@ -134,6 +134,7 @@ class TestFmtSearchProducts:
             timestamp="2024-01-01T00:00:00Z",
             page_start_index=0,
             page_size=100,
+            has_next=False,
             total_results=1,
             results=[Product(uuid=UUID, name="Test Product", identifiers=[])],
         )
@@ -146,11 +147,39 @@ class TestFmtSearchProducts:
             timestamp="2024-01-01T00:00:00Z",
             page_start_index=0,
             page_size=100,
+            has_next=False,
             total_results=0,
             results=[],
         )
         output = _capture(fmt_search_products, data)
         assert "No results (total: 0)" in output
+
+    def test_v1_page_shows_count_and_next_token(self):
+        data = PaginatedProductResponse(
+            has_next=True,
+            next_page_token="t2",
+            results=[Product(uuid=UUID, name="Test Product", identifiers=[])],
+        )
+        output = _capture(fmt_search_products, data)
+        assert "1 result(s)" in output
+        assert "More results: --page-token t2" in output
+
+    def test_v1_last_page_has_no_next_hint(self):
+        data = PaginatedProductResponse(has_next=False, results=[])
+        output = _capture(fmt_search_products, data)
+        assert "0 result(s)" in output
+        assert "--page-token" not in output
+
+    def test_legacy_page_keeps_offset_range(self):
+        data = _legacy(
+            PaginatedProductResponse,
+            timestamp="2024-01-01T00:00:00Z",
+            pageStartIndex=0,
+            pageSize=2,
+            totalResults=3,
+            results=[product(UUID, "P1"), product(UUID2, "P2")],
+        )
+        assert "Results 1-2 of 3" in _capture(fmt_search_products, data)
 
 
 class TestFmtSearchReleases:
@@ -160,6 +189,7 @@ class TestFmtSearchReleases:
             timestamp="2024-01-01T00:00:00Z",
             page_start_index=0,
             page_size=100,
+            has_next=False,
             total_results=1,
             results=[
                 _legacy(
@@ -1040,6 +1070,7 @@ class TestFmtSearchComponents:
             timestamp="2024-01-01T00:00:00Z",
             page_start_index=0,
             page_size=100,
+            has_next=False,
             total_results=1,
             results=[Component(uuid=UUID, name="Test Component", identifiers=[])],
         )
@@ -1052,6 +1083,7 @@ class TestFmtSearchComponents:
             timestamp="2024-01-01T00:00:00Z",
             page_start_index=0,
             page_size=100,
+            has_next=False,
             total_results=0,
             results=[],
         )
@@ -1066,6 +1098,7 @@ class TestFmtSearchComponentReleases:
             timestamp="2024-01-01T00:00:00Z",
             page_start_index=0,
             page_size=100,
+            has_next=False,
             total_results=1,
             results=[
                 _legacy(Release, uuid=UUID, version="1.0.0", created_date="2024-01-01T00:00:00Z", pre_release=True)

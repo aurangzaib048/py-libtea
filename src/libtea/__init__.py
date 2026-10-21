@@ -139,6 +139,9 @@ if TYPE_CHECKING:
         IdentifierType as IdentifierType,
     )
     from libtea.models import (
+        PaginatedCollectionResponse as PaginatedCollectionResponse,
+    )
+    from libtea.models import (
         PaginatedComponentReleaseResponse as PaginatedComponentReleaseResponse,
     )
     from libtea.models import (
@@ -225,6 +228,7 @@ __all__ = [
     "ErrorType",
     "Identifier",
     "IdentifierType",
+    "PaginatedCollectionResponse",
     "PaginatedComponentReleaseResponse",
     "PaginatedComponentResponse",
     "PaginatedProductReleaseResponse",
@@ -287,6 +291,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "ErrorType": "libtea.models",
     "Identifier": "libtea.models",
     "IdentifierType": "libtea.models",
+    "PaginatedCollectionResponse": "libtea.models",
     "PaginatedComponentReleaseResponse": "libtea.models",
     "PaginatedComponentResponse": "libtea.models",
     "PaginatedProductReleaseResponse": "libtea.models",

@@ -124,7 +124,7 @@ def check_list_products(client: TeaClient, ctx: CheckContext) -> CheckResult:
     first = resp.results[0]
     ctx.product_uuid = ctx.product_uuid or first.uuid
     _collect(ctx, first.uuid)
-    return _pass(name, f"Listed {resp.total_results} product(s)")
+    return _pass(name, f"Listed {len(resp.results)} product(s)")
 
 
 def check_search_products(client: TeaClient, ctx: CheckContext) -> CheckResult:
@@ -145,9 +145,9 @@ def check_search_products(client: TeaClient, ctx: CheckContext) -> CheckResult:
         resp = client.search_products(ident.id_type, ident.id_value)
     except TeaError as exc:
         return _fail(name, f"search_products() failed: {exc}", details=str(exc))
-    if resp.total_results < 1:
+    if not resp.results:
         return _fail(name, "Search returned no results for a known identifier")
-    return _pass(name, f"Search returned {resp.total_results} product(s)")
+    return _pass(name, f"Search returned {len(resp.results)} product(s)")
 
 
 def check_get_product(client: TeaClient, ctx: CheckContext) -> CheckResult:
@@ -189,7 +189,7 @@ def check_product_releases(client: TeaClient, ctx: CheckContext) -> CheckResult:
     first = resp.results[0]
     ctx.product_release_uuid = ctx.product_release_uuid or first.uuid
     _collect(ctx, first.uuid)
-    return _pass(name, f"Got {resp.total_results} release(s)")
+    return _pass(name, f"Got {len(resp.results)} release(s)")
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ def check_list_product_releases(client: TeaClient, ctx: CheckContext) -> CheckRe
     first = resp.results[0]
     ctx.product_release_uuid = ctx.product_release_uuid or first.uuid
     _collect(ctx, first.uuid)
-    return _pass(name, f"Listed {resp.total_results} product release(s)")
+    return _pass(name, f"Listed {len(resp.results)} product release(s)")
 
 
 def check_search_product_releases(client: TeaClient, ctx: CheckContext) -> CheckResult:
@@ -230,9 +230,9 @@ def check_search_product_releases(client: TeaClient, ctx: CheckContext) -> Check
         resp = client.search_product_releases(ident.id_type, ident.id_value)
     except TeaError as exc:
         return _fail(name, f"search_product_releases() failed: {exc}", details=str(exc))
-    if resp.total_results < 1:
+    if not resp.results:
         return _fail(name, "Search returned no results for a known identifier")
-    return _pass(name, f"Search returned {resp.total_results} release(s)")
+    return _pass(name, f"Search returned {len(resp.results)} release(s)")
 
 
 def check_get_product_release(client: TeaClient, ctx: CheckContext) -> CheckResult:
@@ -485,7 +485,7 @@ def check_uuid_format(client: TeaClient, ctx: CheckContext) -> CheckResult:
 
 
 def check_pagination_fields(client: TeaClient, ctx: CheckContext) -> CheckResult:
-    """Verify that the /products listing exposes expected pagination metadata fields."""
+    """Verify that the /products listing honours ``pageSize`` (and, on TEA 0.x, exposes offset metadata)."""
     name = "pagination_fields"
     try:
         result = client.list_products(page_size=10)
@@ -493,14 +493,18 @@ def check_pagination_fields(client: TeaClient, ctx: CheckContext) -> CheckResult
         return _fail(name, f"list_products() failed: {exc}", details=str(exc))
 
     issues: list[str] = []
-    if result.page_size != 10:
-        issues.append(f"page_size: requested 10, got {result.page_size!r}")
-    if result.page_start_index < 0:
-        issues.append(f"page_start_index is negative: {result.page_start_index}")
-    if result.total_results < 0:
-        issues.append(f"total_results is negative: {result.total_results}")
-    if not result.timestamp:
-        issues.append("timestamp is empty")
+    if client.is_legacy:
+        if result.page_size != 10:
+            issues.append(f"page_size: requested 10, got {result.page_size!r}")
+        if result.page_start_index is None or result.page_start_index < 0:
+            issues.append(f"page_start_index is missing or negative: {result.page_start_index!r}")
+        if result.total_results is None or result.total_results < 0:
+            issues.append(f"total_results is missing or negative: {result.total_results!r}")
+        if not result.timestamp:
+            issues.append("timestamp is missing")
+    elif len(result.results) > 10:
+        # TEA 1.x pages carry no totals; hasNext/nextPageToken consistency is enforced by the model.
+        issues.append(f"page_size: requested 10, got {len(result.results)} results")
     if issues:
         return _fail(name, "Pagination metadata issues", details="; ".join(issues))
     return _pass(name, "Pagination metadata fields present and valid")

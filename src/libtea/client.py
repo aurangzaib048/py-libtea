@@ -21,11 +21,11 @@ from semver import Version
 from libtea._hashing import WEAK_HASH_ALGORITHMS
 from libtea._http import TeaHttpClient, probe_endpoint
 from libtea._validation import (
+    _MAX_PAGE_SIZE_V1,
     _validate,
     _validate_artifact_version,
     _validate_collection_version,
     _validate_list,
-    _validate_page_offset,
     _validate_page_size,
     _validate_path_segment,
 )
@@ -35,6 +35,7 @@ from libtea.exceptions import (
     TeaConnectionError,
     TeaDiscoveryError,
     TeaServerError,
+    TeaValidationError,
 )
 from libtea.models import (
     CLE,
@@ -44,6 +45,7 @@ from libtea.models import (
     Component,
     ComponentReleaseWithCollection,
     DiscoveryInfo,
+    PaginatedCollectionResponse,
     PaginatedComponentReleaseResponse,
     PaginatedComponentResponse,
     PaginatedProductReleaseResponse,
@@ -51,6 +53,7 @@ from libtea.models import (
     Product,
     ProductRelease,
     Release,
+    _PaginatedResponse,
 )
 
 logger = logging.getLogger("libtea")
@@ -233,45 +236,65 @@ class TeaClient:
         data = self._http.get_json("/discovery", params={"tei": tei})
         return _validate_list(DiscoveryInfo, data, legacy=self.is_legacy)
 
+    # --- Pagination parameters ---
+
+    def _page_params(self, page_token: str | None, page_size: int) -> dict[str, typing.Any]:
+        """Build the paging query: an opaque ``pageToken`` on TEA 1.x, an integer ``pageOffset`` on 0.x."""
+        if not self.is_legacy:
+            _validate_page_size(page_size, _MAX_PAGE_SIZE_V1)
+            return {"pageSize": page_size} if page_token is None else {"pageSize": page_size, "pageToken": page_token}
+        _validate_page_size(page_size)
+        if page_token is not None and not (page_token.isascii() and page_token.isdigit()):
+            raise TeaValidationError(
+                f"page_token for a TEA 0.x server must be a non-negative integer offset, got {page_token!r}"
+            )
+        return {"pageOffset": int(page_token or 0), "pageSize": page_size}
+
+    def _all_pages(self, path: str, model_cls: type[_PaginatedResponse]) -> list[typing.Any]:
+        """Fetch every page of a TEA 1.x list endpoint that 0.4.0 served as a bare array."""
+
+        def fetch_page(*, page_token: str | None, page_size: int) -> _PaginatedResponse:
+            data = self._http.get_json(path, params=self._page_params(page_token, page_size))
+            return _validate(model_cls, data, legacy=self.is_legacy)
+
+        # ponytail: drains every page into memory; expose an iterator if lists get large
+        return list(self._paginate(fetch_page, _MAX_PAGE_SIZE_V1))
+
     # --- Products ---
 
-    def list_products(self, *, page_offset: int = 0, page_size: int = 100) -> PaginatedProductResponse:
+    def list_products(self, *, page_token: str | None = None, page_size: int = 100) -> PaginatedProductResponse:
         """List all products (no identifier filter).
 
         Args:
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing products.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/products",
-            params={"pageOffset": page_offset, "pageSize": page_size},
+            params=self._page_params(page_token, page_size),
         )
         return _validate(PaginatedProductResponse, data, legacy=self.is_legacy)
 
     def search_products(
-        self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
+        self, id_type: str, id_value: str, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedProductResponse:
         """Search for products by identifier (e.g. PURL, CPE, TEI).
 
         Args:
             id_type: Identifier type (e.g. ``"PURL"``, ``"CPE"``, ``"TEI"``).
             id_value: Identifier value to search for.
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing matching products.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/products",
-            params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
+            params={"idType": id_type, "idValue": id_value, **self._page_params(page_token, page_size)},
         )
         return _validate(PaginatedProductResponse, data, legacy=self.is_legacy)
 
@@ -288,65 +311,61 @@ class TeaClient:
         return _validate(Product, data, legacy=self.is_legacy)
 
     def get_product_releases(
-        self, uuid: str, *, page_offset: int = 0, page_size: int = 100
+        self, uuid: str, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedProductReleaseResponse:
         """Get paginated releases for a product.
 
         Args:
             uuid: Product UUID.
-            page_offset: Zero-based page offset.
-            page_size: Number of results per page.
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing product releases.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             f"/product/{_validate_path_segment(uuid)}/releases",
-            params={"pageOffset": page_offset, "pageSize": page_size},
+            params=self._page_params(page_token, page_size),
         )
         return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
     # --- Product Releases ---
 
-    def list_product_releases(self, *, page_offset: int = 0, page_size: int = 100) -> PaginatedProductReleaseResponse:
+    def list_product_releases(
+        self, *, page_token: str | None = None, page_size: int = 100
+    ) -> PaginatedProductReleaseResponse:
         """List all product releases (no identifier filter).
 
         Args:
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing product releases.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/productReleases",
-            params={"pageOffset": page_offset, "pageSize": page_size},
+            params=self._page_params(page_token, page_size),
         )
         return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
     def search_product_releases(
-        self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
+        self, id_type: str, id_value: str, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedProductReleaseResponse:
         """Search for product releases by identifier (e.g. PURL, CPE, TEI).
 
         Args:
             id_type: Identifier type (e.g. ``"PURL"``, ``"CPE"``, ``"TEI"``).
             id_value: Identifier value to search for.
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing matching product releases.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/productReleases",
-            params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
+            params={"idType": id_type, "idValue": id_value, **self._page_params(page_token, page_size)},
         )
         return _validate(PaginatedProductReleaseResponse, data, legacy=self.is_legacy)
 
@@ -383,8 +402,10 @@ class TeaClient:
         Returns:
             List of all collection versions.
         """
-        data = self._http.get_json(f"/productRelease/{_validate_path_segment(uuid)}/collections")
-        return _validate_list(Collection, data, legacy=self.is_legacy)
+        path = f"/productRelease/{_validate_path_segment(uuid)}/collections"
+        if not self.is_legacy:
+            return self._all_pages(path, PaginatedCollectionResponse)
+        return _validate_list(Collection, self._http.get_json(path), legacy=self.is_legacy)
 
     def get_product_release_collection(self, uuid: str, version: int) -> Collection:
         """Get a specific collection version for a product release.
@@ -417,7 +438,7 @@ class TeaClient:
     def get_component_releases(self, uuid: str) -> list[Release]:
         """Get all releases for a component.
 
-        Unlike product releases, component releases are not paginated.
+        TEA 1.x paginates this endpoint and every page is fetched; TEA 0.4.0 returns a bare array.
 
         Args:
             uuid: Component UUID.
@@ -425,46 +446,44 @@ class TeaClient:
         Returns:
             List of component releases.
         """
-        data = self._http.get_json(f"/component/{_validate_path_segment(uuid)}/releases")
-        return _validate_list(Release, data, legacy=self.is_legacy)
+        path = f"/component/{_validate_path_segment(uuid)}/releases"
+        if not self.is_legacy:
+            return self._all_pages(path, PaginatedComponentReleaseResponse)
+        return _validate_list(Release, self._http.get_json(path), legacy=self.is_legacy)
 
-    def list_components(self, *, page_offset: int = 0, page_size: int = 100) -> PaginatedComponentResponse:
+    def list_components(self, *, page_token: str | None = None, page_size: int = 100) -> PaginatedComponentResponse:
         """List all components (no identifier filter).
 
         Args:
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing components.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/components",
-            params={"pageOffset": page_offset, "pageSize": page_size},
+            params=self._page_params(page_token, page_size),
         )
         return _validate(PaginatedComponentResponse, data, legacy=self.is_legacy)
 
     def search_components(
-        self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
+        self, id_type: str, id_value: str, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedComponentResponse:
         """Search for components by identifier (e.g. PURL, CPE, TEI).
 
         Args:
             id_type: Identifier type (e.g. ``"PURL"``, ``"CPE"``, ``"TEI"``).
             id_value: Identifier value to search for.
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing matching components.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/components",
-            params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
+            params={"idType": id_type, "idValue": id_value, **self._page_params(page_token, page_size)},
         )
         return _validate(PaginatedComponentResponse, data, legacy=self.is_legacy)
 
@@ -503,8 +522,10 @@ class TeaClient:
         Returns:
             List of all collection versions.
         """
-        data = self._http.get_json(f"/componentRelease/{_validate_path_segment(uuid)}/collections")
-        return _validate_list(Collection, data, legacy=self.is_legacy)
+        path = f"/componentRelease/{_validate_path_segment(uuid)}/collections"
+        if not self.is_legacy:
+            return self._all_pages(path, PaginatedCollectionResponse)
+        return _validate_list(Collection, self._http.get_json(path), legacy=self.is_legacy)
 
     def get_component_release_collection(self, uuid: str, version: int) -> Collection:
         """Get a specific collection version for a component release.
@@ -521,44 +542,40 @@ class TeaClient:
         return _validate(Collection, data, legacy=self.is_legacy)
 
     def list_component_releases(
-        self, *, page_offset: int = 0, page_size: int = 100
+        self, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedComponentReleaseResponse:
         """List all component releases (no identifier filter).
 
         Args:
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing component releases.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/componentReleases",
-            params={"pageOffset": page_offset, "pageSize": page_size},
+            params=self._page_params(page_token, page_size),
         )
         return _validate(PaginatedComponentReleaseResponse, data, legacy=self.is_legacy)
 
     def search_component_releases(
-        self, id_type: str, id_value: str, *, page_offset: int = 0, page_size: int = 100
+        self, id_type: str, id_value: str, *, page_token: str | None = None, page_size: int = 100
     ) -> PaginatedComponentReleaseResponse:
         """Search for component releases by identifier (e.g. PURL, CPE, TEI).
 
         Args:
             id_type: Identifier type (e.g. ``"PURL"``, ``"CPE"``, ``"TEI"``).
             id_value: Identifier value to search for.
-            page_offset: Zero-based page offset (default 0).
-            page_size: Number of results per page (default 100, max 10000).
+            page_token: ``nextPageToken`` from the previous page, or ``None`` for the first page.
+            page_size: Number of results per page (default 100; max 100 on TEA 1.x, 10000 on 0.x).
 
         Returns:
             Paginated response containing matching component releases.
         """
-        _validate_page_size(page_size)
-        _validate_page_offset(page_offset)
         data = self._http.get_json(
             "/componentReleases",
-            params={"idType": id_type, "idValue": id_value, "pageOffset": page_offset, "pageSize": page_size},
+            params={"idType": id_type, "idValue": id_value, **self._page_params(page_token, page_size)},
         )
         return _validate(PaginatedComponentReleaseResponse, data, legacy=self.is_legacy)
 
@@ -731,15 +748,16 @@ class TeaClient:
 
     @staticmethod
     def _paginate(fetch_page: typing.Callable[..., typing.Any], page_size: int, **kwargs: typing.Any) -> Iterator[_T]:
-        """Generic paginator: calls *fetch_page* with page_offset/page_size, yields results."""
-        _validate_page_size(page_size)
-        offset = 0
+        """Generic paginator: calls *fetch_page* with page_token/page_size, following ``nextPageToken``."""
+        token: str | None = None
         while True:
-            page = fetch_page(**kwargs, page_offset=offset, page_size=page_size)
+            page = fetch_page(**kwargs, page_token=token, page_size=page_size)
             yield from page.results
-            offset += len(page.results)
-            if offset >= page.total_results or not page.results:
-                break
+            if not page.has_next or not page.results:
+                return
+            if page.next_page_token == token:
+                raise TeaServerError(f"Server repeated pageToken {token!r}; stopping pagination")
+            token = page.next_page_token
 
     def iter_products(self, id_type: str, id_value: str, *, page_size: int = 100) -> Iterator[Product]:
         """Iterate over all products matching an identifier, auto-paginating.

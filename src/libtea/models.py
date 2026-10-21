@@ -561,44 +561,71 @@ class CLE(_TeaModel):
 # --- Pagination ---
 
 
-class PaginatedProductResponse(_TeaModel):
+class _PaginatedResponse(_TeaModel):
+    """Common fields of a paginated TEA response.
+
+    TEA 1.0.0 pages carry ``has_next`` and an opaque ``next_page_token``. 0.4.0
+    pages carry offset metadata instead; under the legacy context ``has_next``
+    and ``next_page_token`` are derived from it, the token being the next
+    result offset as a string.
+    """
+
+    has_next: bool
+    next_page_token: str | None = None
+    # TEA 0.4.0 only.
+    timestamp: datetime | None = None
+    page_start_index: int | None = None
+    page_size: int | None = None
+    total_results: int | None = None
+
+    def _v1_problems(self) -> list[str]:
+        problems = super()._v1_problems()
+        if self.has_next and not self.next_page_token:
+            problems.append("hasNext is true but nextPageToken is missing")
+        return problems
+
+    @model_validator(mode="before")
+    @classmethod
+    def _synthesize_legacy_token(cls, data: Any, info: ValidationInfo) -> Any:
+        """Derive ``hasNext``/``nextPageToken`` from 0.4.0 offsets (legacy context only)."""
+        if not (_is_legacy(info) and isinstance(data, dict) and "totalResults" in data):
+            return data
+        start, total, results = data.get("pageStartIndex"), data["totalResults"], data.get("results", [])
+        if not (isinstance(start, int) and isinstance(total, int) and isinstance(results, list)):
+            return data  # malformed offsets: leave hasNext missing so validation reports it
+        next_offset = start + len(results)
+        has_next = bool(results) and next_offset < total
+        return {**data, "hasNext": has_next, **({"nextPageToken": str(next_offset)} if has_next else {})}
+
+
+class PaginatedProductResponse(_PaginatedResponse):
     """Paginated response containing a list of products."""
 
-    timestamp: datetime
-    page_start_index: int
-    page_size: int
-    total_results: int
     results: tuple[Product, ...] = ()
 
 
-class PaginatedProductReleaseResponse(_TeaModel):
+class PaginatedProductReleaseResponse(_PaginatedResponse):
     """Paginated response containing a list of product releases."""
 
-    timestamp: datetime
-    page_start_index: int
-    page_size: int
-    total_results: int
     results: tuple[ProductRelease, ...] = ()
 
 
-class PaginatedComponentResponse(_TeaModel):
+class PaginatedComponentResponse(_PaginatedResponse):
     """Paginated response containing a list of components."""
 
-    timestamp: datetime
-    page_start_index: int
-    page_size: int
-    total_results: int
     results: tuple[Component, ...] = ()
 
 
-class PaginatedComponentReleaseResponse(_TeaModel):
+class PaginatedComponentReleaseResponse(_PaginatedResponse):
     """Paginated response containing a list of component releases."""
 
-    timestamp: datetime
-    page_start_index: int
-    page_size: int
-    total_results: int
     results: tuple[Release, ...] = ()
+
+
+class PaginatedCollectionResponse(_PaginatedResponse):
+    """Paginated response containing a list of collections (TEA 1.0.0)."""
+
+    results: tuple[Collection, ...] = ()
 
 
 # --- Discovery types ---
@@ -673,6 +700,7 @@ __all__ = [
     "DiscoveryInfo",
     "ErrorResponse",
     "Identifier",
+    "PaginatedCollectionResponse",
     "PaginatedComponentReleaseResponse",
     "PaginatedComponentResponse",
     "PaginatedProductReleaseResponse",

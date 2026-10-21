@@ -9,7 +9,6 @@ from libtea._validation import (
     _validate_artifact_version,
     _validate_collection_version,
     _validate_list,
-    _validate_page_offset,
     _validate_page_size,
     _validate_path_segment,
 )
@@ -106,30 +105,20 @@ class TestPageSizeValidation:
             client.search_product_releases("PURL", "pkg:pypi/foo", page_size=_MAX_PAGE_SIZE + 1)
 
 
-class TestPageOffsetValidation:
-    """page_offset parameter is validated in search/paginated methods."""
-
-    def test_validate_page_offset_rejects_negative(self):
-        with pytest.raises(TeaValidationError, match="page_offset must be >= 0"):
-            _validate_page_offset(-1)
-
-    def test_validate_page_offset_accepts_zero(self):
-        _validate_page_offset(0)  # should not raise
-
-    def test_validate_page_offset_accepts_positive(self):
-        _validate_page_offset(100)  # should not raise
+class TestPageTokenValidation:
+    """page_token must be an integer offset on TEA 0.x servers."""
 
     def test_search_products_rejects_negative_offset(self, client):
-        with pytest.raises(TeaValidationError, match="page_offset"):
-            client.search_products("PURL", "pkg:pypi/foo", page_offset=-1)
+        with pytest.raises(TeaValidationError, match="integer offset"):
+            client.search_products("PURL", "pkg:pypi/foo", page_token="-1")
 
     def test_get_product_releases_rejects_negative_offset(self, client):
-        with pytest.raises(TeaValidationError, match="page_offset"):
-            client.get_product_releases("a1b2c3d4-e5f6-7890-abcd-ef1234567890", page_offset=-1)
+        with pytest.raises(TeaValidationError, match="integer offset"):
+            client.get_product_releases("a1b2c3d4-e5f6-7890-abcd-ef1234567890", page_token="-1")
 
     def test_search_product_releases_rejects_negative_offset(self, client):
-        with pytest.raises(TeaValidationError, match="page_offset"):
-            client.search_product_releases("PURL", "pkg:pypi/foo", page_offset=-1)
+        with pytest.raises(TeaValidationError, match="integer offset"):
+            client.search_product_releases("PURL", "pkg:pypi/foo", page_token="-1")
 
 
 class TestCollectionVersionValidation:

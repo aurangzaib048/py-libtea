@@ -34,6 +34,7 @@ from libtea.conformance._checks import (
     check_uuid_format,
 )
 from libtea.conformance._types import CheckStatus
+from tests.spec_data import V1_BASE_URL
 
 BASE_URL = "https://api.example.com/tea/v0.4.0"
 
@@ -1259,6 +1260,21 @@ class TestCheckPaginationFields:
         result = check_pagination_fields(client, ctx)
         assert result.status == CheckStatus.FAIL
         assert "page_size" in result.details
+
+    @responses.activate
+    def test_v1_pass_within_page_size(self, v1):
+        responses.get(
+            f"{V1_BASE_URL}/products", json={"hasNext": True, "nextPageToken": "t", "results": [_PRODUCT_JSON]}
+        )
+        result = check_pagination_fields(v1, CheckContext())
+        assert result.status == CheckStatus.PASS
+
+    @responses.activate
+    def test_v1_fail_when_page_overflows(self, v1):
+        responses.get(f"{V1_BASE_URL}/products", json={"hasNext": False, "results": [_PRODUCT_JSON] * 11})
+        result = check_pagination_fields(v1, CheckContext())
+        assert result.status == CheckStatus.FAIL
+        assert "got 11 results" in result.details
 
 
 class TestCheckCamelCaseFields:

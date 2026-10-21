@@ -22,6 +22,7 @@ from libtea.models import (
     ErrorType,
     Identifier,
     IdentifierType,
+    PaginatedCollectionResponse,
     PaginatedComponentReleaseResponse,
     PaginatedComponentResponse,
     PaginatedProductResponse,
@@ -34,10 +35,12 @@ from tests.spec_data import (
     COMPONENT_RELEASE,
     LEGACY,
     MD5_HEX,
+    PRODUCT,
     V1_ARTIFACT,
     V1_COLLECTION,
     V1_PRODUCT_RELEASE,
     V1_RELEASE,
+    product,
 )
 
 
@@ -360,7 +363,7 @@ class TestOptionalFields:
             "totalResults": 0,
             "results": [],
         }
-        resp = PaginatedProductResponse.model_validate(data)
+        resp = PaginatedProductResponse.model_validate(data, context=LEGACY)
         assert resp.total_results == 0
         assert resp.results == ()
 
@@ -380,9 +383,58 @@ class TestPaginatedResponse:
                 }
             ],
         }
-        resp = PaginatedProductResponse.model_validate(data)
+        resp = PaginatedProductResponse.model_validate(data, context=LEGACY)
         assert resp.total_results == 1
         assert resp.results[0].name == "Apache Log4j 2"
+
+
+class TestPagination:
+    def test_v1_page(self):
+        p = PaginatedProductResponse.model_validate(
+            {"hasNext": True, "nextPageToken": "eyJwYWdlIjoiY29udGludWF0aW9uIn0", "results": []}
+        )
+        assert (p.has_next, p.next_page_token, p.total_results) == (True, "eyJwYWdlIjoiY29udGludWF0aW9uIn0", None)
+
+    def test_v1_has_next_without_token_rejected(self):
+        with pytest.raises(ValidationError, match="nextPageToken"):
+            PaginatedProductResponse.model_validate({"hasNext": True, "results": []})
+
+    def test_legacy_shape_rejected_on_v1(self):
+        with pytest.raises(ValidationError, match="hasNext"):  # Pydantic reports missing fields by alias
+            PaginatedProductResponse.model_validate(
+                {
+                    "timestamp": "2024-03-20T15:30:00Z",
+                    "pageStartIndex": 0,
+                    "pageSize": 2,
+                    "totalResults": 3,
+                    "results": [],
+                }
+            )
+
+    @pytest.mark.parametrize(
+        ("start", "n", "total", "has_next", "token"),
+        [(0, 2, 3, True, "2"), (2, 1, 3, False, None), (0, 0, 5, False, None)],
+    )
+    def test_legacy_offsets_synthesize_token(self, start, n, total, has_next, token):
+        data = {
+            "timestamp": "2024-03-20T15:30:00Z",
+            "pageStartIndex": start,
+            "pageSize": 2,
+            "totalResults": total,
+            "results": [product(PRODUCT, f"P{i}") for i in range(n)],
+        }
+        p = PaginatedProductResponse.model_validate(data, context=LEGACY)
+        assert (p.has_next, p.next_page_token) == (has_next, token)
+
+    def test_legacy_bad_offsets_rejected(self):
+        with pytest.raises(ValidationError):
+            PaginatedProductResponse.model_validate(
+                {"pageStartIndex": "x", "totalResults": 3, "results": []}, context=LEGACY
+            )
+
+    def test_collection_page(self):
+        p = PaginatedCollectionResponse.model_validate({"hasNext": False, "results": [V1_COLLECTION]})
+        assert p.results[0].version == 2
 
 
 class TestCLEEventType:
@@ -675,7 +727,7 @@ class TestPaginatedComponentResponse:
                 }
             ],
         }
-        resp = PaginatedComponentResponse.model_validate(data)
+        resp = PaginatedComponentResponse.model_validate(data, context=LEGACY)
         assert resp.total_results == 1
         assert isinstance(resp.results[0], Component)
         assert resp.results[0].name == "Test Component"
@@ -688,7 +740,7 @@ class TestPaginatedComponentResponse:
             "totalResults": 0,
             "results": [],
         }
-        resp = PaginatedComponentResponse.model_validate(data)
+        resp = PaginatedComponentResponse.model_validate(data, context=LEGACY)
         assert resp.total_results == 0
         assert resp.results == ()
 
@@ -721,7 +773,7 @@ class TestPaginatedComponentReleaseResponse:
             "totalResults": 0,
             "results": [],
         }
-        resp = PaginatedComponentReleaseResponse.model_validate(data)
+        resp = PaginatedComponentReleaseResponse.model_validate(data, context=LEGACY)
         assert resp.total_results == 0
         assert resp.results == ()
 

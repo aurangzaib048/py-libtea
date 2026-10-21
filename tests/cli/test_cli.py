@@ -1167,7 +1167,7 @@ class TestNewCommands:
         )
         result = runner.invoke(
             app,
-            ["--json", "get-product-releases", uuid, "--page-offset", "10", "--page-size", "5", "--base-url", BASE_URL],
+            ["--json", "get-product-releases", uuid, "--page-token", "10", "--page-size", "5", "--base-url", BASE_URL],
         )
         assert result.exit_code == 0
         data = json.loads(result.output)

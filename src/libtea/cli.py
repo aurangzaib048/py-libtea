@@ -464,13 +464,13 @@ def discover(
 @app.command("search-products")
 @click.option("--id-type", required=True, help="Identifier type (CPE, TEI, PURL)")
 @click.option("--id-value", required=True, help="Identifier value")
-@click.option("--page-offset", type=int, default=0, help="Page offset")
+@click.option("--page-token", default=None, help="Token from the previous page (an offset on TEA 0.x servers)")
 @click.option("--page-size", type=int, default=100, help="Page size")
 @shared_options
 def search_products(
     id_type: str,
     id_value: str,
-    page_offset: int,
+    page_token: str | None,
     page_size: int,
     base_url: str | None,
     token: str | None,
@@ -491,20 +491,20 @@ def search_products(
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
     ) as client:
-        result = client.search_products(id_type, id_value, page_offset=page_offset, page_size=page_size)
+        result = client.search_products(id_type, id_value, page_token=page_token, page_size=page_size)
     _output(result)
 
 
 @app.command("search-releases")
 @click.option("--id-type", required=True, help="Identifier type (CPE, TEI, PURL)")
 @click.option("--id-value", required=True, help="Identifier value")
-@click.option("--page-offset", type=int, default=0, help="Page offset")
+@click.option("--page-token", default=None, help="Token from the previous page (an offset on TEA 0.x servers)")
 @click.option("--page-size", type=int, default=100, help="Page size")
 @shared_options
 def search_releases(
     id_type: str,
     id_value: str,
-    page_offset: int,
+    page_token: str | None,
     page_size: int,
     base_url: str | None,
     token: str | None,
@@ -525,7 +525,7 @@ def search_releases(
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
     ) as client:
-        result = client.search_product_releases(id_type, id_value, page_offset=page_offset, page_size=page_size)
+        result = client.search_product_releases(id_type, id_value, page_token=page_token, page_size=page_size)
     _output(result)
 
 
@@ -634,12 +634,12 @@ def get_collection(
 
 @app.command("get-product-releases")
 @click.argument("uuid")
-@click.option("--page-offset", type=int, default=0, help="Page offset")
+@click.option("--page-token", default=None, help="Token from the previous page (an offset on TEA 0.x servers)")
 @click.option("--page-size", type=int, default=100, help="Page size")
 @shared_options
 def get_product_releases(
     uuid: str,
-    page_offset: int,
+    page_token: str | None,
     page_size: int,
     base_url: str | None,
     token: str | None,
@@ -660,7 +660,7 @@ def get_product_releases(
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
     ) as client:
-        result = client.get_product_releases(uuid, page_offset=page_offset, page_size=page_size)
+        result = client.get_product_releases(uuid, page_token=page_token, page_size=page_size)
     _output(result)
 
 
@@ -797,13 +797,13 @@ def get_cle(
 @app.command("search-components")
 @click.option("--id-type", required=True, help="Identifier type (CPE, TEI, PURL)")
 @click.option("--id-value", required=True, help="Identifier value")
-@click.option("--page-offset", type=int, default=0, help="Page offset")
+@click.option("--page-token", default=None, help="Token from the previous page (an offset on TEA 0.x servers)")
 @click.option("--page-size", type=int, default=100, help="Page size")
 @shared_options
 def search_components(
     id_type: str,
     id_value: str,
-    page_offset: int,
+    page_token: str | None,
     page_size: int,
     base_url: str | None,
     token: str | None,
@@ -824,20 +824,20 @@ def search_components(
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
     ) as client:
-        result = client.search_components(id_type, id_value, page_offset=page_offset, page_size=page_size)
+        result = client.search_components(id_type, id_value, page_token=page_token, page_size=page_size)
     _output(result)
 
 
 @app.command("search-component-releases")
 @click.option("--id-type", required=True, help="Identifier type (CPE, TEI, PURL)")
 @click.option("--id-value", required=True, help="Identifier value")
-@click.option("--page-offset", type=int, default=0, help="Page offset")
+@click.option("--page-token", default=None, help="Token from the previous page (an offset on TEA 0.x servers)")
 @click.option("--page-size", type=int, default=100, help="Page size")
 @shared_options
 def search_component_releases(
     id_type: str,
     id_value: str,
-    page_offset: int,
+    page_token: str | None,
     page_size: int,
     base_url: str | None,
     token: str | None,
@@ -858,7 +858,7 @@ def search_component_releases(
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
     ) as client:
-        result = client.search_component_releases(id_type, id_value, page_offset=page_offset, page_size=page_size)
+        result = client.search_component_releases(id_type, id_value, page_token=page_token, page_size=page_size)
     _output(result)
 
 

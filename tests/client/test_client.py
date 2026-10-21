@@ -63,7 +63,7 @@ class TestSearchProducts:
                 "results": [],
             },
         )
-        resp = client.search_products("CPE", "cpe:2.3:a:vendor:product", page_offset=10, page_size=25)
+        resp = client.search_products("CPE", "cpe:2.3:a:vendor:product", page_token="10", page_size=25)
         request = responses.calls[0].request
         assert "pageOffset=10" in str(request.url)
         assert "pageSize=25" in str(request.url)
@@ -130,7 +130,7 @@ class TestListProducts:
                 "results": [],
             },
         )
-        resp = client.list_products(page_offset=10, page_size=25)
+        resp = client.list_products(page_token="10", page_size=25)
         request = responses.calls[0].request
         assert "pageOffset=10" in str(request.url)
         assert "pageSize=25" in str(request.url)
@@ -142,7 +142,7 @@ class TestListProducts:
 
     def test_list_products_rejects_negative_offset(self, client):
         with pytest.raises(TeaValidationError):
-            client.list_products(page_offset=-1)
+            client.list_products(page_token="-1")
 
 
 class TestSearchProductReleases:
@@ -212,7 +212,7 @@ class TestListProductReleases:
                 "results": [],
             },
         )
-        client.list_product_releases(page_offset=5, page_size=50)
+        client.list_product_releases(page_token="5", page_size=50)
         request = responses.calls[0].request
         assert "pageOffset=5" in str(request.url)
         assert "pageSize=50" in str(request.url)
@@ -223,7 +223,7 @@ class TestListProductReleases:
 
     def test_list_product_releases_invalid_page_offset(self, client):
         with pytest.raises(TeaValidationError):
-            client.list_product_releases(page_offset=-1)
+            client.list_product_releases(page_token="-1")
 
 
 class TestSearchComponents:
@@ -265,7 +265,7 @@ class TestSearchComponents:
                 "results": [],
             },
         )
-        resp = client.search_components("CPE", "cpe:2.3:a:vendor:product", page_offset=10, page_size=25)
+        resp = client.search_components("CPE", "cpe:2.3:a:vendor:product", page_token="10", page_size=25)
         request = responses.calls[0].request
         assert "pageOffset=10" in str(request.url)
         assert "pageSize=25" in str(request.url)
@@ -332,7 +332,7 @@ class TestListComponents:
                 "results": [],
             },
         )
-        resp = client.list_components(page_offset=10, page_size=25)
+        resp = client.list_components(page_token="10", page_size=25)
         request = responses.calls[0].request
         assert "pageOffset=10" in str(request.url)
         assert "pageSize=25" in str(request.url)
@@ -344,7 +344,7 @@ class TestListComponents:
 
     def test_list_components_rejects_negative_offset(self, client):
         with pytest.raises(TeaValidationError):
-            client.list_components(page_offset=-1)
+            client.list_components(page_token="-1")
 
 
 class TestSearchComponentReleases:
@@ -422,7 +422,7 @@ class TestListComponentReleases:
 
     def test_list_component_releases_invalid_offset(self, client):
         with pytest.raises(TeaValidationError):
-            client.list_component_releases(page_offset=-1)
+            client.list_component_releases(page_token="-1")
 
 
 class TestProduct:
@@ -1033,7 +1033,7 @@ class TestPagination:
                 "results": [],
             },
         )
-        resp = client.get_product_releases("a1b2c3d4-e5f6-7890-abcd-ef1234567890", page_offset=50, page_size=25)
+        resp = client.get_product_releases("a1b2c3d4-e5f6-7890-abcd-ef1234567890", page_token="50", page_size=25)
         request = responses.calls[0].request
         assert "pageOffset=50" in str(request.url)
         assert "pageSize=25" in str(request.url)
