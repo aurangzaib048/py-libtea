@@ -632,7 +632,7 @@ def format_output(data: object, *, command: str | None = None, console: Console 
 
     for model_type, formatter in _TYPE_FORMATTERS.items():
         if isinstance(data, model_type):
-            formatter(data, console=c)  # type: ignore[operator]
+            formatter(data, console=c)
             return
 
     # Fallback: render as JSON
