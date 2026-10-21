@@ -333,6 +333,28 @@ class TestCLICommands:
         assert result.exit_code == 0
         assert dest.exists()
 
+    @responses.activate
+    def test_download_with_md5_checksum(self, tmp_path):
+        """A user-supplied MD5 is accepted (it is not server data) and still warns as a weak hash."""
+        artifact_url = "https://cdn.example.com/sbom.json"
+        responses.get(artifact_url, body=b"{}")
+        dest = tmp_path / "sbom.json"
+        with pytest.warns(UserWarning, match="weak hash"):
+            result = runner.invoke(
+                app,
+                [
+                    "download",
+                    artifact_url,
+                    str(dest),
+                    "--checksum",
+                    "MD5:99914b932bd37a50b983c5e7c90ae93b",
+                    "--base-url",
+                    BASE_URL,
+                ],
+            )
+        assert result.exit_code == 0
+        assert dest.read_bytes() == b"{}"
+
     def test_download_invalid_checksum_format(self, tmp_path):
         dest = tmp_path / "sbom.json"
         result = runner.invoke(

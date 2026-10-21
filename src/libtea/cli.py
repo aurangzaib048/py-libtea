@@ -1183,7 +1183,10 @@ def download(
                 _error(
                     f"Unknown checksum algorithm: {alg!r}. Supported: {', '.join(e.value for e in ChecksumAlgorithm)}"
                 )
-            checksums.append(Checksum(algorithm_type=alg_enum, algorithm_value=value))
+            # The user supplied this hash; it is not server data, so TEA 1.0.0 response rules (e.g. no MD5) don't apply.
+            checksums.append(
+                Checksum.model_validate({"algType": alg_enum, "algValue": value}, context={"tea_legacy": True})
+            )
 
     try:
         with _client_session(

@@ -288,7 +288,7 @@ class ArtifactFormat(_TeaModel):
     def _v1_problems(self) -> list[str]:
         problems = super()._v1_problems()
         if not self.checksums and (self.url is not None or "checksums" in self.model_fields_set):
-            problems.append("'checksums' must not be empty when 'url' is set or 'checksums' is present")
+            problems.append("'checksums' must not be empty")
         return problems
 
 

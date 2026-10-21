@@ -766,14 +766,14 @@ class TestV1RequiredFields:
 
     def test_collection_requires_artifacts_key(self):
         data = {k: v for k, v in V1_COLLECTION.items() if k != "artifacts"}
-        with pytest.raises(ValidationError, match="artifacts"):
+        with pytest.raises(ValidationError, match="missing required field 'artifacts'"):
             Collection.model_validate(data)
         assert Collection.model_validate({**data, "artifacts": []}).artifacts == ()
         assert Collection.model_validate(data, context=LEGACY).artifacts == ()
 
     def test_format_checksums_present_must_not_be_empty(self):
         for extra in ({}, {"url": "https://x.example.com/a"}):
-            with pytest.raises(ValidationError, match="checksums"):
+            with pytest.raises(ValidationError, match="'checksums' must not be empty"):
                 ArtifactFormat.model_validate({"mediaType": "application/json", "checksums": [], **extra})
         assert ArtifactFormat.model_validate({"mediaType": "application/json"}).checksums == ()
 
