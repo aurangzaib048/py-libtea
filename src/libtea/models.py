@@ -99,10 +99,11 @@ class ComplianceDocumentType(StrEnum):
 
 
 class TeiType(StrEnum):
-    """TEI URN scheme types per TEA discovery specification.
+    """TEI types per TEA discovery specification.
 
-    These are the valid ``<type>`` values in a TEI URN
-    (``urn:tei:<type>:<domain>:<identifier>``).
+    These are the ``<type>`` values of a TEI. The 0.4.0 URN form
+    (``urn:tei:<type>:<domain>:<identifier>``) accepts only these; the 1.0.0 URI form
+    (``tei://<domain>/<type>/<identifier>``) also accepts other lowercase types.
     """
 
     UUID = "uuid"

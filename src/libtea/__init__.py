@@ -5,7 +5,7 @@ Quick start::
     from libtea import TeaClient
 
     with TeaClient("https://tea.example.com/v1", token="...") as client:
-        results = client.discover("urn:tei:purl:example.com:pkg:pypi/lib@1.0")
+        results = client.discover("tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
 
 Or auto-discover the server from a domain's ``.well-known/tea``::
 

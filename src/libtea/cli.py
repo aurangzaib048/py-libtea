@@ -87,9 +87,7 @@ def shared_options(fn):  # type: ignore[no-untyped-def]
         click.option("--no-input", is_flag=True, help="Never prompt for input (for scripts and CI)"),
     ]
     if not has_positional_tei:
-        options.append(
-            click.option("--tei", "tei_urn", default=None, help="TEI URN for base-url/domain auto-discovery")
-        )
+        options.append(click.option("--tei", "tei_urn", default=None, help="TEI for base-url/domain auto-discovery"))
     options.extend(
         [
             click.option("--port", type=int, default=None, help="Port for well-known resolution"),
@@ -183,7 +181,7 @@ def _parse_basic_auth(auth: str | None) -> tuple[str, str] | None:
 
 
 def _domain_from_tei(tei: str | None) -> str | None:
-    """Extract the domain component from a TEI (``tei://`` or ``urn:tei:``) for auto-discovery.
+    """Extract the domain component from a TEI (``tei://`` URI or legacy URN form) for auto-discovery.
 
     Returns ``None`` if ``tei`` is falsy or not a valid TEI.
     """
@@ -211,7 +209,7 @@ def _build_client(
     """Build a TeaClient from CLI options.
 
     When neither --base-url nor --domain is provided, the domain is extracted
-    from the TEI URN (if given) and used for .well-known/tea discovery.
+    from the TEI (if given) and used for .well-known/tea discovery.
     """
     # Fall back to --tei from shared_options (stored in ctx.obj) when tei is not provided directly
     if not tei:
@@ -360,8 +358,8 @@ def _error(message: str) -> NoReturn:
 
 \b
 Quick start:
-  tea-cli inspect 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0'
-  tea-cli download 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' ./sboms/
+  tea-cli inspect 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1'
+  tea-cli download 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' ./sboms/
 
 \b
 Environment variables:
@@ -453,8 +451,8 @@ def discover(
 
     \b
     Examples:
-      tea-cli discover 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --domain example.com
-      tea-cli discover 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --quiet
+      tea-cli discover 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' --domain example.com
+      tea-cli discover 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' --quiet
       tea-cli discover --purl 'pkg:pypi/requests@2.31.0' --base-url https://tea.example.com/tea/v1.0.0
     """
     if (tei is None) == (purl is None):
@@ -531,7 +529,7 @@ def search_releases(
     \b
     Examples:
       tea-cli search-releases --id-type PURL --id-value 'pkg:pypi/requests' --domain example.com
-      tea-cli search-releases --id-type TEI --id-value 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --json
+      tea-cli search-releases --id-type TEI --id-value 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' --json
     """
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
@@ -864,7 +862,7 @@ def search_component_releases(
     \b
     Examples:
       tea-cli search-component-releases --id-type PURL --id-value 'pkg:pypi/requests' --domain example.com
-      tea-cli search-component-releases --id-type TEI --id-value 'urn:tei:...' --json
+      tea-cli search-component-releases --id-type TEI --id-value 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' --json
     """
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, allow_private_ips=allow_private_ips
@@ -1149,7 +1147,7 @@ def download(
 
     \b
     Examples:
-      tea-cli download 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' ./sboms/
+      tea-cli download 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' ./sboms/
       tea-cli download https://tea.example.com/artifacts/abc/download output.json --checksum SHA-256:abcdef...
     """
     ctx = click.get_current_context()
@@ -1244,8 +1242,8 @@ def inspect(
 
     \b
     Examples:
-      tea-cli inspect 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --domain example.com
-      tea-cli inspect 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0' --json
+      tea-cli inspect 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' --domain example.com
+      tea-cli inspect 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1' --json
     """
     with _client_session(
         base_url, token, domain, timeout, use_http, port, auth, tei=tei, allow_private_ips=allow_private_ips
@@ -1343,7 +1341,7 @@ def conformance(
 
     \b
     Examples:
-      tea-cli conformance --base-url https://tea.example.com --tei 'urn:tei:purl:example.com:pkg:pypi/requests@2.31.0'
+      tea-cli conformance --base-url https://tea.example.com --tei 'tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1'
       tea-cli conformance --base-url https://tea.example.com --verbose
     """
     ctx.ensure_object(dict)

@@ -19,7 +19,7 @@ from libtea.conformance import run_conformance
 
 result = run_conformance(
     "https://tea.example.com/v1",
-    tei="urn:tei:purl:example.com:pkg:pypi/mylib",
+    tei="tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1",
     token="your-bearer-token",
     timeout=30.0,
 )
@@ -38,7 +38,7 @@ for check in result.checks:
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `base_url` | `str` | TEA server base URL (required) |
-| `tei` | `str \| None` | TEI URN for discovery-driven testing |
+| `tei` | `str \| None` | TEI for discovery-driven testing |
 | `product_uuid` | `str \| None` | Explicit product UUID |
 | `product_release_uuid` | `str \| None` | Explicit product release UUID |
 | `component_uuid` | `str \| None` | Explicit component UUID |
@@ -49,6 +49,8 @@ for check in result.checks:
 | `timeout` | `float` | Request timeout in seconds (default: 30) |
 | `allow_private_ips` | `bool` | Allow private IPs in downloads (default: False) |
 
+The spec version under test comes from `base_url`: a `/v<semver>` suffix such as `/v0.4.0` selects that version, otherwise TEA 1.0.0 is assumed. Checks that differ between versions adapt to it (see the check reference).
+
 **Returns:** `ConformanceResult` with `.passed`, `.failed`, `.warned`, `.skipped` counts and `.checks` list.
 
 ### CLI
@@ -58,7 +60,7 @@ for check in result.checks:
 tea-cli conformance --base-url https://tea.example.com/v1
 
 # With TEI for discovery-driven testing
-tea-cli conformance --base-url https://tea.example.com/v1 --tei "urn:tei:..."
+tea-cli conformance --base-url https://tea.example.com/v1 --tei "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
 
 # With explicit UUIDs
 tea-cli conformance --base-url https://tea.example.com/v1 \
@@ -83,7 +85,7 @@ The conformance suite registers as a pytest plugin via the `pytest11` entry poin
 
 ```bash
 # Run conformance checks as pytest tests
-pytest --tea-base-url https://tea.example.com/v1 --tea-tei "urn:tei:..."
+pytest --tea-base-url https://tea.example.com/v1 --tea-tei "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
 
 # With authentication
 pytest --tea-base-url https://tea.example.com/v1 --tea-token "$TEA_TOKEN"
@@ -97,7 +99,7 @@ pytest --tea-base-url https://tea.example.com/v1 -v
 | Option | Description |
 |--------|-------------|
 | `--tea-base-url` | TEA server base URL (required to enable conformance tests) |
-| `--tea-tei` | TEI URN for discovery-driven testing |
+| `--tea-tei` | TEI for discovery-driven testing |
 | `--tea-token` | Bearer token |
 | `--tea-product-uuid` | Explicit product UUID |
 | `--tea-release-uuid` | Explicit product release UUID |

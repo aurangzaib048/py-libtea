@@ -257,8 +257,8 @@ class TeaClient:
         client already knows and is only available on TEA 1.x servers.
 
         Args:
-            tei: TEI string, sent verbatim (e.g. ``tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1``
-                or ``urn:tei:purl:example.com:pkg:pypi/lib@1.0``).
+            tei: TEI string, sent verbatim (e.g. ``tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1``).
+                Use the form the server speaks: the ``tei://`` URI on TEA 1.x, the legacy URN on 0.4.0.
             purl: Package URL, sent verbatim (e.g. ``pkg:maven/org.apache.logging.log4j/log4j-core@2.24.3``).
 
         Returns:
@@ -746,7 +746,9 @@ class TeaClient:
 
         Fetches ``/artifact/{uuid}/{version}/download?mediaType=...`` (``latest`` when
         ``version`` is omitted) with the client's credentials. A redirect is followed
-        without credentials, so the token is only ever sent to the API base.
+        without credentials, so the token is only ever sent to the API base. When the API base is a
+        private address and its download endpoint redirects to its own host, the redirect hop is
+        SSRF-checked, so it needs ``allow_private_ips=True``.
 
         Args:
             uuid: Artifact UUID.
