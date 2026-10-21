@@ -679,6 +679,10 @@ md5 = Checksum.model_validate(
 )
 ```
 
+**Downloads**
+
+- `download_artifact` and `download_artifact_content` now refuse a redirect from HTTPS to HTTP and raise `TeaValidationError`; the partial file is deleted. HTTP-to-HTTP and HTTP-to-HTTPS redirects still work.
+
 **Errors**
 
 - `ErrorResponse.error` is a `str` (was `ErrorType`); compare it with `==`. `ErrorResponse.message` is new, and `ErrorType` has the 1.0.0 values.
