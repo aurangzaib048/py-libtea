@@ -29,7 +29,7 @@ from libtea._validation import (
     _validate_page_size,
     _validate_path_segment,
 )
-from libtea.discovery import fetch_well_known, select_best_endpoint, select_endpoints
+from libtea.discovery import _advertised_version, fetch_well_known, select_best_endpoint, select_endpoints
 from libtea.exceptions import (
     TeaChecksumError,
     TeaConnectionError,
@@ -152,7 +152,7 @@ class TeaClient:
         token: str | None = None,
         basic_auth: tuple[str, str] | None = None,
         timeout: float = 30.0,
-        version: str = "0.4.0",
+        version: str | None = None,
         scheme: str = "https",
         port: int | None = None,
         max_retries: int = 3,
@@ -166,13 +166,17 @@ class TeaClient:
         with the requested ``version`` (SemVer match), and probes each in priority
         order. If an endpoint is unreachable or returns a server error, the next
         candidate is tried (per TEA spec: "MUST retry ... with the next endpoint").
+        The API path uses each endpoint's version string exactly as advertised
+        (build metadata included, e.g. ``/v1.0.0+build.5``).
 
         Args:
             domain: Domain name to resolve (e.g. ``tea.example.com``).
             token: Optional bearer token.
             basic_auth: Optional ``(username, password)`` tuple.
             timeout: Request timeout in seconds (default 30).
-            version: TEA spec SemVer to match against (default ``0.4.0``).
+            version: TEA spec SemVer to match against. The default (``None``) negotiates
+                the highest of :data:`SUPPORTED_SPEC_VERSIONS` the server advertises:
+                ``1.0.0`` first, then ``0.4.0``.
             scheme: URL scheme for discovery — ``"https"`` (default) or ``"http"``.
             port: Optional port for ``.well-known`` resolution.
             max_retries: Retry count on 5xx (default 3).
@@ -187,17 +191,38 @@ class TeaClient:
 
         Raises:
             TeaDiscoveryError: If no compatible or reachable endpoint is found
-                (wraps the last probe failure as ``__cause__``).
+                (wraps the last probe failure as ``__cause__``), or the negotiated
+                version is not one this client supports.
         """
         well_known = fetch_well_known(domain, timeout=timeout, scheme=scheme, port=port)
-        best = select_best_endpoint(well_known, version)
+        if version is not None:
+            best = select_best_endpoint(well_known, version)
+        else:
+            for wanted in SUPPORTED_SPEC_VERSIONS:
+                try:
+                    best = select_best_endpoint(well_known, wanted)
+                    break
+                except TeaDiscoveryError:
+                    continue
+            else:
+                offered = sorted({v for ep in well_known.endpoints for v in ep.versions})
+                raise TeaDiscoveryError(
+                    f"No compatible endpoint found for any version tried {list(SUPPORTED_SPEC_VERSIONS)}. "
+                    f"Available versions: {offered}"
+                )
         matched_version = best.matched_version
+        try:
+            _resolve_spec_version(best.endpoint.url, matched_version)
+        except ValueError as exc:
+            raise TeaDiscoveryError(f"Cannot use negotiated version {matched_version!r}: {exc}") from exc
         # Get all endpoints that advertise the matched version (exact match) for failover
         candidates = select_endpoints(well_known, matched_version)
 
         errors: list[tuple[str, Exception]] = []
         for endpoint in candidates:
-            base_url = f"{endpoint.url.rstrip('/')}/v{matched_version}"
+            # Build metadata does not affect precedence, so each endpoint may spell the version differently.
+            advertised = _advertised_version(endpoint, matched_version)
+            base_url = f"{endpoint.url.rstrip('/')}/v{advertised}"
             try:
                 probe_endpoint(base_url, timeout=min(timeout, 5.0))
             except (TeaConnectionError, TeaServerError) as exc:
@@ -213,14 +238,15 @@ class TeaClient:
                 backoff_factor=backoff_factor,
                 allow_private_ips=allow_private_ips,
                 cache_ttl=cache_ttl,
+                spec_version=advertised,
             )
 
         if errors:
             summary = "; ".join(f"{url}: {exc}" for url, exc in errors)
             raise TeaDiscoveryError(
-                f"All {len(errors)} endpoint(s) failed for version {version!r}: {summary}"
+                f"All {len(errors)} endpoint(s) failed for version {matched_version!r}: {summary}"
             ) from errors[-1][1]
-        raise TeaDiscoveryError(f"No reachable endpoint found for version {version!r}")  # pragma: no cover
+        raise TeaDiscoveryError(f"No reachable endpoint found for version {matched_version!r}")  # pragma: no cover
 
     # --- Discovery ---
 

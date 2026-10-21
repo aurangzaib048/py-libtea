@@ -3,6 +3,7 @@ import requests
 import responses
 from pydantic import ValidationError
 
+from libtea.client import TeaClient
 from libtea.discovery import (
     VersionedEndpoint,
     _is_compatible_version,
@@ -806,3 +807,93 @@ class TestSelectBestEndpoint:
             warnings.simplefilter("always")
             select_best_endpoint(wk, "0.4.0")
         assert any("negotiated to server version" in str(warning.message) for warning in w)
+
+
+class TestEndpointNegotiation:
+    """``TeaClient.from_well_known`` negotiates 1.0.0, then 0.4.0, and keeps the advertised spelling."""
+
+    API = "https://api.example.com"
+
+    def _discover(self, *endpoints: dict, **kwargs) -> TeaClient:
+        responses.get("https://example.com/.well-known/tea", json={"schemaVersion": 1, "endpoints": list(endpoints)})
+        return TeaClient.from_well_known("example.com", **kwargs)
+
+    @responses.activate
+    def test_negotiates_highest_supported(self):
+        responses.head(f"{self.API}/v1.0.0", status=200)
+        client = self._discover({"url": self.API, "versions": ["0.4.0", "1.0.0"]})
+        assert client.spec_version == "1.0.0"
+        assert client.is_legacy is False
+        assert responses.calls[1].request.url == f"{self.API}/v1.0.0"
+
+    @responses.activate
+    def test_falls_back_to_0_4_0(self):
+        responses.head(f"{self.API}/v0.4.0", status=200)
+        client = self._discover({"url": self.API, "versions": ["0.4.0"]})
+        assert client.spec_version == "0.4.0"
+        assert client.is_legacy is True
+        assert responses.calls[1].request.url == f"{self.API}/v0.4.0"
+
+    @responses.activate
+    def test_build_metadata_spelling_used(self):
+        responses.head(f"{self.API}/v1.0.0+build.5", status=200)
+        responses.get(
+            f"{self.API}/v1.0.0+build.5/discovery",
+            json=[
+                {
+                    "productReleaseUuid": "d4d9f54a-abcf-11ee-ac79-1a52914d44b1",
+                    "servers": [{"rootUrl": self.API, "versions": ["1.0.0+build.5"]}],
+                }
+            ],
+        )
+        client = self._discover({"url": self.API, "versions": ["1.0.0+build.5"]})
+        assert client.spec_version == "1.0.0+build.5"
+        assert responses.calls[1].request.url == f"{self.API}/v1.0.0+build.5"
+        client.discover("tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
+        assert responses.calls[2].request.url.startswith(f"{self.API}/v1.0.0+build.5/discovery?tei=")
+
+    @responses.activate
+    def test_each_failover_candidate_uses_its_own_spelling(self):
+        responses.head("https://a.example.com/v1.0.0+a", status=500)
+        responses.head("https://b.example.com/v1.0.0+b", status=200)
+        client = self._discover(
+            {"url": "https://a.example.com", "versions": ["1.0.0+a"], "priority": 1.0},
+            {"url": "https://b.example.com", "versions": ["1.0.0+b"], "priority": 0.5},
+        )
+        assert client.spec_version == "1.0.0+b"
+        assert [c.request.url for c in responses.calls[1:]] == [
+            "https://a.example.com/v1.0.0+a",
+            "https://b.example.com/v1.0.0+b",
+        ]
+
+    @responses.activate
+    def test_explicit_version_kept(self):
+        responses.head(f"{self.API}/v0.4.0", status=200)
+        client = self._discover({"url": self.API, "versions": ["1.0.0", "0.4.0"]}, version="0.4.0")
+        assert client.spec_version == "0.4.0"
+        assert client.is_legacy is True
+        assert responses.calls[1].request.url == f"{self.API}/v0.4.0"
+
+    @responses.activate
+    def test_unsupported_explicit_version_raises_discovery_error_without_probing(self):
+        with pytest.raises(TeaDiscoveryError, match="Unsupported TEA spec version") as exc_info:
+            self._discover({"url": self.API, "versions": ["2.0.0"]}, version="2.0.0")
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert len(responses.calls) == 1  # only .well-known/tea was fetched
+
+    @responses.activate
+    def test_no_supported_version_lists_tried_and_offered(self):
+        with pytest.raises(TeaDiscoveryError) as exc_info:
+            self._discover({"url": self.API, "versions": ["2.0.0", "0.9.0-x"]})
+        message = str(exc_info.value)
+        assert "'1.0.0', '0.4.0'" in message
+        assert "'2.0.0'" in message
+
+    def test_select_best_endpoint_returns_advertised_spelling(self):
+        wk = TeaWellKnown(
+            schema_version=1,
+            endpoints=[TeaEndpoint(url="https://api.example.com", versions=["not-semver", "1.0.0+build.5"])],
+        )
+        assert select_best_endpoint(wk, "1.0.0").matched_version == "1.0.0+build.5"
+        with pytest.warns(UserWarning, match="negotiated to server version"):
+            assert select_best_endpoint(wk, "1.1.0").matched_version == "1.0.0+build.5"

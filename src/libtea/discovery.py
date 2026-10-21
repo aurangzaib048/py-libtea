@@ -308,11 +308,28 @@ class VersionedEndpoint:
     """An endpoint paired with the server version it was matched on.
 
     Returned by :func:`select_best_endpoint` to let callers know which
-    version to use in the URL path (``v{matched_version}``).
+    version to use in the URL path (``v{matched_version}``). ``matched_version``
+    is the string exactly as the endpoint advertises it, build metadata included.
     """
 
     endpoint: TeaEndpoint
     matched_version: str
+
+
+def _advertised_version(ep: TeaEndpoint, version: str) -> str:
+    """Return the spelling ``ep`` advertises for ``version``.
+
+    SemVer equality ignores build metadata, so ``1.0.0`` equals ``1.0.0+build.5``; the spec requires
+    the path to use the string exactly as advertised, so recover it from the endpoint.
+    """
+    target = _SemVer.parse(version)
+    for v_str in ep.versions:
+        try:
+            if _SemVer.parse(v_str) == target:
+                return v_str
+        except ValueError:
+            continue
+    return version  # pragma: no cover — callers only pass a version the endpoint advertises
 
 
 def _is_compatible_version(client: _SemVer, server: _SemVer) -> bool:
@@ -358,7 +375,7 @@ def select_best_endpoint(well_known: TeaWellKnown, supported_version: str) -> Ve
     # Phase 1: exact match — delegate to select_endpoints
     try:
         exact = select_endpoints(well_known, supported_version)
-        return VersionedEndpoint(endpoint=exact[0], matched_version=supported_version)
+        return VersionedEndpoint(endpoint=exact[0], matched_version=_advertised_version(exact[0], supported_version))
     except TeaDiscoveryError:
         pass  # fall through to Phase 2 (compatible match)
 
