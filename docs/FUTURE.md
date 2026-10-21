@@ -51,9 +51,22 @@ Items that depend on external factors or are deferred indefinitely. These are **
 | `sortField` / `sortOrder` | Sorting query parameters on `/products`, `/productReleases`, `/components` and `/componentReleases`, and on the per-parent child lists (a product's releases, a component's releases, and both collections lists). The client sends none of them. |
 | Routing follow-up requests to the discovery `servers[].rootUrl` | `discover()` returns the servers that host a product release, but later calls keep using the client's own API base. Honouring `rootUrl` + `/v<version>` per release needs a client per server and token scoping (a token must go only to its own API base). |
 | `purl` → `tei://<domain>/purl/<base64url>` builder | Helper that turns a PURL into the unpadded Base64URL TEI identifier. `parse_tei` already accepts such TEIs and passes the identifier through unchanged; callers must encode it themselves. |
+| `--spec-version` override for the CLI, `run_conformance` and the pytest plugin | A base URL without a `/v<semver>` suffix now means TEA 1.0.0. `TeaClient(spec_version=...)` can force 0.4.0, but `tea-cli`, `run_conformance` and `--tea-base-url` cannot, so they treat a 0.4.0 server behind an unversioned base URL as 1.0.0. |
 | Lowercase-hex checksum conformance check | The spec wants lowercase hexadecimal checksum values. Verification already lowercases both sides; a conformance check should flag servers that send uppercase. |
 
 **Action:** Schedule individual items when a consumer needs them; each is independent.
+
+---
+
+## HTTP Layer Follow-ups
+
+**Blocked on:** Nothing — a known gap in how `requests` handles redirects.
+
+| Item | Notes |
+|------|-------|
+| Bound 3xx bodies during downloads | Even with `allow_redirects=False` and `stream=True`, `requests.Session.send` reads the whole 3xx response body (to release the connection) before libtea sees it, so `max_download_bytes` does not cap a redirect body. Fixing it needs a transport adapter (or a urllib3-level request) that skips that read. |
+
+**Action:** Address if a server is found sending large redirect bodies.
 
 ---
 

@@ -639,7 +639,8 @@ libtea now targets TEA 1.0.0 and still talks to 0.4.0 servers. These Python API 
 **Spec versions**
 
 - A base URL without a `/v<semver>` suffix (and no `spec_version=`) is now TEA 1.0.0, not 0.4.0. `TEA_SPEC_VERSION` is `"1.0.0"`. To keep talking to a 0.4.0 server, pass `spec_version="0.4.0"` or end the base URL in `/v0.4.0`.
-- `TeaClient.from_well_known(version=None)` now negotiates: it prefers 1.0.0, falls back to 0.4.0, and fails over across both. It used to default to `"0.4.0"`. Pass `version="0.4.0"` to pin the old behaviour. The API path uses the version spelling exactly as the server advertises it (for example `/v1.0.0+build.5`).
+- `TeaClient.from_well_known(version=None)` now negotiates: it prefers 1.0.0, falls back to 0.4.0, and fails over across both. It used to default to `"0.4.0"`. Pass `version="0.4.0"` to pin the old behaviour. It downgrades to another compatible version (with a warning) only when neither is advertised exactly; a prerelease such as `1.0.0-rc.1` does not count as 1.0.0. The API path uses the version spelling exactly as the server advertises it (for example `/v1.0.0+build.5`).
+- A base URL ending in `/v<semver>` with a major version other than 0 or 1 (for example `/v2.0.0`) now raises `ValueError`.
 - `TeaClient` gains `spec_version` and `is_legacy`. `TeaClientProtocol` gains them too, plus `download_artifact_content` and the new `discover` signature, so test doubles that implement the protocol need updating.
 
 **Discovery and TEIs**
@@ -658,9 +659,10 @@ libtea now targets TEA 1.0.0 and still talks to 0.4.0 servers. These Python API 
 
 - `Collection.date` is now `Collection.created_date`. A 0.4.0 `date` is mapped to it.
 - `get_product_release` returns `ProductReleaseWithCollection`, a `ProductRelease` subclass with `latest_collection` (`None` on 0.4.0 servers). Because of that, JSON output for a product release (`tea-cli --json get-release`, `tea-cli inspect`) now includes `latestCollection`: the collection on 1.x servers, `null` on 0.4.0 servers.
-- `ComponentReleaseWithCollection` still exposes `.release` and `.latest_collection`, and now accepts the flattened 1.0.0 wire shape.
+- `ComponentReleaseWithCollection` still exposes `.release` and `.latest_collection`, and now accepts the flattened 1.0.0 wire shape. Keyword construction with a dict, `ComponentReleaseWithCollection(release={...}, ...)`, now fails; pass a `Release` instance instead.
 - Fields that both spec versions require are no longer optional: `Checksum.algorithm_type` and `algorithm_value`, `Artifact.uuid`, `type` and `formats`, and `ReleaseDistribution.distribution_id`. Building one without them now fails.
 - Fields that only 1.0.0 requires (for example `Release.component`, `ProductRelease.product`, `Artifact.version` and `created_date`, `ArtifactFormat.media_type`, `Identifier.id_type` and `id_value`, and the `Collection` fields) keep their optional types, but a 1.x response that omits one raises `TeaValidationError`. 0.4.0 responses may omit them.
+- Models you build in Python follow the 1.0.0 rules too: leaving out a field that only 1.0.0 requires raises pydantic `ValidationError`. That breaks test doubles such as `Collection()`, `Identifier(id_type="PURL")` and a `Paginated*Response` built without `has_next` or `results`. For 0.4.0-shaped data, pass the wire (camelCase) dict to `model_validate(..., context={"tea_legacy": True})`. Don't nest instances built that way into a model you build without that context; the outer model checks them against the 1.0.0 rules and fails.
 - Removed: `ReleaseDistribution.distribution_type`, `Artifact.distribution_types`, and the `mimeType` alias for `ArtifactFormat.media_type`.
 - `ComplianceDocumentType.FEDRAMP` is now `"FEDRAMP"` (was `"FedRAMP"`), and `EU_DECLARATION_OF_CONFORMITY` is new.
 
