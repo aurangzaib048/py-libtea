@@ -29,7 +29,7 @@ from libtea.models import (
     Release,
     TeiType,
 )
-from tests.spec_data import COMPONENT_RELEASE, LEGACY, V1_ARTIFACT, V1_COLLECTION
+from tests.spec_data import COMPONENT_RELEASE, LEGACY, MD5_HEX, V1_ARTIFACT, V1_COLLECTION
 
 
 class TestEnums:
@@ -142,7 +142,7 @@ class TestChecksumNormalization:
 
     def test_valid_values_pass_through(self):
         for member in ChecksumAlgorithm:
-            cs = Checksum.model_validate({"algType": member.value, "algValue": "aabbcc"})
+            cs = Checksum.model_validate({"algType": member.value, "algValue": "aabbcc"}, context=LEGACY)
             assert cs.algorithm_type == member
 
 
@@ -754,6 +754,14 @@ class TestV1RequiredFields:
     def test_artifact_requires_formats_entry(self):
         with pytest.raises(ValidationError, match="formats"):
             Artifact.model_validate({**V1_ARTIFACT, "formats": []})
+
+    def test_md5_rejected_on_v1(self):
+        with pytest.raises(ValidationError, match="MD5"):
+            Checksum.model_validate({"algType": "MD5", "algValue": MD5_HEX})
+
+    def test_md5_accepted_legacy(self):
+        cs = Checksum.model_validate({"algType": "MD5", "algValue": MD5_HEX}, context=LEGACY)
+        assert cs.algorithm_type is ChecksumAlgorithm.MD5
 
     def test_fedramp_value(self):
         assert ComplianceDocumentType.FEDRAMP == "FEDRAMP"

@@ -1173,7 +1173,7 @@ class TestWeakChecksumWarning:
         content = b"test content"
         responses.get("https://artifacts.example.com/sbom.json", body=content)
         md5 = hashlib.md5(content).hexdigest()
-        checksums = [Checksum(algorithm_type=ChecksumAlgorithm.MD5, algorithm_value=md5)]
+        checksums = [Checksum.model_validate({"algType": "MD5", "algValue": md5}, context=LEGACY)]
         dest = tmp_path / "sbom.json"
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")

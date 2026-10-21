@@ -6,7 +6,16 @@ import responses
 from libtea._validation import _validate, _validate_list
 from libtea.client import TeaClient
 from libtea.exceptions import TeaValidationError
-from tests.spec_data import COMPONENT_RELEASE, LEGACY_BASE_URL, PRODUCT, V1_BASE_URL, product
+from tests.spec_data import (
+    ARTIFACT,
+    COMPONENT_RELEASE,
+    LEGACY_BASE_URL,
+    MD5_HEX,
+    PRODUCT,
+    V1_ARTIFACT,
+    V1_BASE_URL,
+    product,
+)
 
 
 class TestSpecVersion:
@@ -61,3 +70,14 @@ def test_v1_client_rejects_incomplete_collection():
     )
     with pytest.raises(TeaValidationError, match="Collection"):
         TeaClient(V1_BASE_URL).get_component_release_collection_latest(COMPONENT_RELEASE)
+
+
+@responses.activate
+def test_v1_artifact_with_md5_rejected():
+    art = {
+        **V1_ARTIFACT,
+        "formats": [{**V1_ARTIFACT["formats"][0], "checksums": [{"algType": "MD5", "algValue": MD5_HEX}]}],
+    }
+    responses.get(f"{V1_BASE_URL}/artifact/{ARTIFACT}/latest", json=art)
+    with pytest.raises(TeaValidationError, match="MD5"):
+        TeaClient(V1_BASE_URL).get_artifact(ARTIFACT)

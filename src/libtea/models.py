@@ -120,6 +120,9 @@ class ChecksumAlgorithm(StrEnum):
 
     Values use hyphen form (e.g. ``SHA-256``). The Checksum model's validator
     normalizes underscore form (``SHA_256``) to hyphen form automatically.
+
+    ``MD5`` is 0.4.0 only: TEA 1.0.0 dropped it, so it is rejected unless the
+    model is validated with the legacy context.
     """
 
     MD5 = "MD5"
@@ -222,7 +225,8 @@ class Checksum(_TeaModel):
     """A checksum with algorithm type and hex value.
 
     The ``algorithm_type`` validator normalizes both hyphen form (``SHA-256``) and
-    underscore form (``SHA_256``) to the canonical hyphen form.
+    underscore form (``SHA_256``) to the canonical hyphen form. TEA 1.0.0 does not
+    allow ``MD5``; 0.4.0 servers may still send it.
     """
 
     # Manual aliases because the TEA spec wire format uses abbreviated names
@@ -244,6 +248,12 @@ class Checksum(_TeaModel):
             if mapped is not None:
                 return mapped
         return v
+
+    def _v1_problems(self) -> list[str]:
+        problems = super()._v1_problems()
+        if self.algorithm_type is ChecksumAlgorithm.MD5:
+            problems.append("MD5 is not a TEA 1.0.0 checksum algorithm")
+        return problems
 
 
 # --- Domain objects ---
