@@ -65,6 +65,10 @@ _SUPPORTED_MAJORS = frozenset(Version.parse(v).major for v in SUPPORTED_SPEC_VER
 
 _T = TypeVar("_T")
 
+# ponytail: hard ceiling of 10,000 pages per pagination run (1M results at pageSize 100) so a server
+# minting endless distinct tokens cannot loop forever; make it a parameter if real catalogs get that big.
+_MAX_PAGES = 10_000
+
 
 def _resolve_spec_version(base_url: str, explicit: str | None) -> Version:
     """Resolve the TEA spec version: explicit argument, then a ``/v<semver>`` URL suffix, then the default."""
@@ -250,10 +254,10 @@ class TeaClient:
             )
         return {"pageOffset": int(page_token or 0), "pageSize": page_size}
 
-    def _all_pages(self, path: str, model_cls: type[_PaginatedResponse]) -> list[typing.Any]:
+    def _all_pages(self, path: str, model_cls: type[_PaginatedResponse[_T]]) -> list[_T]:
         """Fetch every page of a TEA 1.x list endpoint that 0.4.0 served as a bare array."""
 
-        def fetch_page(*, page_token: str | None, page_size: int) -> _PaginatedResponse:
+        def fetch_page(*, page_token: str | None, page_size: int) -> _PaginatedResponse[_T]:
             data = self._http.get_json(path, params=self._page_params(page_token, page_size))
             return _validate(model_cls, data, legacy=self.is_legacy)
 
@@ -750,14 +754,17 @@ class TeaClient:
     def _paginate(fetch_page: typing.Callable[..., typing.Any], page_size: int, **kwargs: typing.Any) -> Iterator[_T]:
         """Generic paginator: calls *fetch_page* with page_token/page_size, following ``nextPageToken``."""
         token: str | None = None
-        while True:
+        seen: set[str] = set()
+        for _ in range(_MAX_PAGES):
             page = fetch_page(**kwargs, page_token=token, page_size=page_size)
             yield from page.results
             if not page.has_next or not page.results:
                 return
-            if page.next_page_token == token:
-                raise TeaServerError(f"Server repeated pageToken {token!r}; stopping pagination")
             token = page.next_page_token
+            if token in seen:
+                raise TeaServerError(f"Server repeated pageToken {token!r}; stopping pagination")
+            seen.add(token)
+        raise TeaServerError(f"Pagination exceeded {_MAX_PAGES} pages; stopping")
 
     def iter_products(self, id_type: str, id_value: str, *, page_size: int = 100) -> Iterator[Product]:
         """Iterate over all products matching an identifier, auto-paginating.

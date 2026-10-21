@@ -164,6 +164,17 @@ class TestFmtSearchProducts:
         assert "1 result(s)" in output
         assert "More results: --page-token t2" in output
 
+    def test_v1_page_with_totals_still_shows_next_token(self):
+        data = PaginatedProductResponse.model_validate(
+            {"hasNext": True, "nextPageToken": "t2", "totalResults": 5, "results": [product(UUID, "P1")]}
+        )
+        assert data.total_results is None
+        assert "More results: --page-token t2" in _capture(fmt_search_products, data)
+
+    def test_v1_next_token_is_shell_quoted(self):
+        data = PaginatedProductResponse(has_next=True, next_page_token="a b", results=[])
+        assert "More results: --page-token 'a b'" in _capture(fmt_search_products, data)
+
     def test_v1_last_page_has_no_next_hint(self):
         data = PaginatedProductResponse(has_next=False, results=[])
         output = _capture(fmt_search_products, data)

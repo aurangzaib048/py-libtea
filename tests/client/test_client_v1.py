@@ -147,6 +147,37 @@ def test_iter_raises_on_repeated_token(v1):  # Review Focus 1
 
 
 @responses.activate
+def test_iter_raises_on_token_cycle(v1):
+    url = f"{V1_BASE_URL}/products"
+    for sent, nxt in [(None, "A"), ("A", "B"), ("B", "A")]:
+        query = {"idType": "PURL", "idValue": "pkg:x", "pageSize": "100", **({"pageToken": sent} if sent else {})}
+        responses.get(
+            url,
+            match=[matchers.query_param_matcher(query)],
+            json={"hasNext": True, "nextPageToken": nxt, "results": [product(PRODUCT, "P")]},
+        )
+    with pytest.raises(TeaServerError, match="repeated"):
+        list(v1.iter_products("PURL", "pkg:x"))
+    assert len(responses.calls) == 3
+
+
+@responses.activate
+def test_iter_stops_at_page_cap(v1, monkeypatch):
+    monkeypatch.setattr("libtea.client._MAX_PAGES", 2)
+    url = f"{V1_BASE_URL}/products"
+    for sent, nxt in [(None, "t1"), ("t1", "t2")]:
+        query = {"idType": "PURL", "idValue": "pkg:x", "pageSize": "100", **({"pageToken": sent} if sent else {})}
+        responses.get(
+            url,
+            match=[matchers.query_param_matcher(query)],
+            json={"hasNext": True, "nextPageToken": nxt, "results": [product(PRODUCT, "P")]},
+        )
+    with pytest.raises(TeaServerError, match="Pagination exceeded 2 pages"):
+        list(v1.iter_products("PURL", "pkg:x"))
+    assert len(responses.calls) == 2
+
+
+@responses.activate
 def test_iter_stops_on_empty_page(v1):
     responses.get(f"{V1_BASE_URL}/products", json={"hasNext": True, "nextPageToken": "t", "results": []})
     assert list(v1.iter_products("PURL", "pkg:x")) == []
@@ -220,3 +251,14 @@ def test_legacy_non_numeric_token_rejected(legacy, token):  # Review Focus 2
 def test_legacy_page_size_allows_10000(legacy):
     with pytest.raises(TeaValidationError, match="between 1 and 10000"):
         legacy.list_products(page_size=10001)
+
+
+@responses.activate
+def test_legacy_page_size_10000_accepted(legacy):
+    responses.get(
+        f"{LEGACY_BASE_URL}/products",
+        match=[matchers.query_param_matcher({"pageOffset": "0", "pageSize": "10000"})],
+        json={"timestamp": "2024-03-20T15:30:00Z", "pageStartIndex": 0, "pageSize": 10000, "totalResults": 0},
+    )
+    legacy.list_products(page_size=10000)
+    assert len(responses.calls) == 1

@@ -395,6 +395,16 @@ class TestPagination:
         )
         assert (p.has_next, p.next_page_token, p.total_results) == (True, "eyJwYWdlIjoiY29udGludWF0aW9uIn0", None)
 
+    def test_v1_drops_legacy_offsets(self):
+        p = PaginatedProductResponse.model_validate(
+            {"hasNext": False, "totalResults": 5, "pageStartIndex": 0, "pageSize": 2, "timestamp": "x", "results": []}
+        )
+        assert (p.total_results, p.page_start_index, p.page_size, p.timestamp) == (None, None, None, None)
+
+    def test_non_object_rejected(self):
+        with pytest.raises(ValidationError):
+            PaginatedProductResponse.model_validate([])
+
     def test_v1_has_next_without_token_rejected(self):
         with pytest.raises(ValidationError, match="nextPageToken"):
             PaginatedProductResponse.model_validate({"hasNext": True, "results": []})

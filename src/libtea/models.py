@@ -11,7 +11,7 @@ unless the model is validated with ``context={"tea_legacy": True}``.
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, ClassVar, Literal, Self
+from typing import Any, ClassVar, Generic, Literal, Self, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic.alias_generators import to_camel
@@ -560,14 +560,18 @@ class CLE(_TeaModel):
 
 # --- Pagination ---
 
+_R = TypeVar("_R")
+_LEGACY_PAGE_KEYS = ("timestamp", "pageStartIndex", "pageSize", "totalResults")
 
-class _PaginatedResponse(_TeaModel):
+
+class _PaginatedResponse(_TeaModel, Generic[_R]):
     """Common fields of a paginated TEA response.
 
     TEA 1.0.0 pages carry ``has_next`` and an opaque ``next_page_token``. 0.4.0
     pages carry offset metadata instead; under the legacy context ``has_next``
     and ``next_page_token`` are derived from it, the token being the next
-    result offset as a string.
+    result offset as a string. Outside the legacy context the offset metadata
+    is dropped, so ``total_results is None`` exactly on TEA 1.x pages.
     """
 
     has_next: bool
@@ -577,6 +581,7 @@ class _PaginatedResponse(_TeaModel):
     page_start_index: int | None = None
     page_size: int | None = None
     total_results: int | None = None
+    results: tuple[_R, ...] = ()
 
     def _v1_problems(self) -> list[str]:
         problems = super()._v1_problems()
@@ -586,9 +591,13 @@ class _PaginatedResponse(_TeaModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _synthesize_legacy_token(cls, data: Any, info: ValidationInfo) -> Any:
-        """Derive ``hasNext``/``nextPageToken`` from 0.4.0 offsets (legacy context only)."""
-        if not (_is_legacy(info) and isinstance(data, dict) and "totalResults" in data):
+    def _map_legacy_offsets(cls, data: Any, info: ValidationInfo) -> Any:
+        """Derive ``hasNext``/``nextPageToken`` from 0.4.0 offsets; drop the offsets outside the legacy context."""
+        if not isinstance(data, dict):
+            return data
+        if not _is_legacy(info):
+            return {k: v for k, v in data.items() if k not in _LEGACY_PAGE_KEYS}
+        if "totalResults" not in data:
             return data
         start, total, results = data.get("pageStartIndex"), data["totalResults"], data.get("results", [])
         if not (isinstance(start, int) and isinstance(total, int) and isinstance(results, list)):
@@ -598,34 +607,24 @@ class _PaginatedResponse(_TeaModel):
         return {**data, "hasNext": has_next, **({"nextPageToken": str(next_offset)} if has_next else {})}
 
 
-class PaginatedProductResponse(_PaginatedResponse):
+class PaginatedProductResponse(_PaginatedResponse[Product]):
     """Paginated response containing a list of products."""
 
-    results: tuple[Product, ...] = ()
 
-
-class PaginatedProductReleaseResponse(_PaginatedResponse):
+class PaginatedProductReleaseResponse(_PaginatedResponse[ProductRelease]):
     """Paginated response containing a list of product releases."""
 
-    results: tuple[ProductRelease, ...] = ()
 
-
-class PaginatedComponentResponse(_PaginatedResponse):
+class PaginatedComponentResponse(_PaginatedResponse[Component]):
     """Paginated response containing a list of components."""
 
-    results: tuple[Component, ...] = ()
 
-
-class PaginatedComponentReleaseResponse(_PaginatedResponse):
+class PaginatedComponentReleaseResponse(_PaginatedResponse[Release]):
     """Paginated response containing a list of component releases."""
 
-    results: tuple[Release, ...] = ()
 
-
-class PaginatedCollectionResponse(_PaginatedResponse):
+class PaginatedCollectionResponse(_PaginatedResponse[Collection]):
     """Paginated response containing a list of collections (TEA 1.0.0)."""
-
-    results: tuple[Collection, ...] = ()
 
 
 # --- Discovery types ---

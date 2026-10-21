@@ -9,6 +9,7 @@ their data is ``list`` which is ambiguous by type alone).
 from __future__ import annotations
 
 import json
+import shlex
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -84,7 +85,7 @@ def _pagination_header(
     if data.total_results is None:  # TEA 1.x: no totals, only a continuation token
         console.print(Text(f"{len(data.results)} result(s)", style="dim"))
         if data.has_next:
-            console.print(Text(f"More results: --page-token {data.next_page_token}", style="dim"))
+            console.print(Text(f"More results: --page-token {shlex.quote(data.next_page_token or '')}", style="dim"))
     elif not data.results:
         console.print(Text(f"No results (total: {data.total_results})", style="dim"))
     else:
