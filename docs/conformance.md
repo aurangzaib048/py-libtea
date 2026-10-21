@@ -1,6 +1,6 @@
 # Conformance Test Suite
 
-The `libtea.conformance` module validates that a TEA server correctly implements the [Transparency Exchange API specification](https://github.com/CycloneDX/transparency-exchange-api). It runs 27 checks covering discovery, products, releases, components, artifacts, CLE, and cross-cutting concerns.
+The `libtea.conformance` module validates that a TEA server correctly implements the [Transparency Exchange API specification](https://github.com/CycloneDX/transparency-exchange-api). It runs 28 checks covering discovery, products, releases, components, artifacts, CLE, and cross-cutting concerns.
 
 ## Installation
 
@@ -139,7 +139,7 @@ Each check returns one of four statuses:
 | Check | Description |
 |-------|-------------|
 | `discovery` | Discover a TEI and verify the server returns results |
-| `discovery_404` | Verify unknown TEI returns 404 or empty list |
+| `discovery_404` | Verify unknown TEI returns 404 (TEA 0.x also accepts an empty list; on TEA 1.x a successful discovery response must be a non-empty array) |
 
 ### Products (5 checks)
 
@@ -188,12 +188,13 @@ Each check returns one of four statuses:
 | `component_release_cle` | Get CLE data for a component release |
 | `cle_event_ordering` | Verify CLE events are ordered by id descending |
 
-### Cross-cutting (3 checks)
+### Cross-cutting (4 checks)
 
 | Check | Description |
 |-------|-------------|
 | `uuid_format` | Validate all collected UUIDs match canonical lowercase format |
-| `pagination_fields` | Verify paginated listing exposes valid pagination metadata fields |
+| `pagination_fields` | TEA 0.x: verify the `/products` listing exposes valid offset metadata (`pageSize`, `pageStartIndex`, `totalResults`, `timestamp`). TEA 1.x: verify the listing honours `pageSize` (no more than 10 results for `pageSize=10`) |
+| `pagination_token` | TEA 1.x: request `/products` with `pageSize=1`, follow `nextPageToken`, and verify the next page returns different products. Skipped on TEA 0.x or when the server has fewer than two products |
 | `camel_case_fields` | Confirm server uses camelCase field names |
 
 ## CI integration

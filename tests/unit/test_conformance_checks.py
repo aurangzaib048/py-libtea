@@ -1,4 +1,5 @@
 import responses
+from responses import matchers
 
 from libtea.client import TeaClient
 from libtea.conformance._checks import (
@@ -23,6 +24,7 @@ from libtea.conformance._checks import (
     check_list_product_releases,
     check_list_products,
     check_pagination_fields,
+    check_pagination_token,
     check_product_cle,
     check_product_release_cle,
     check_product_release_collection_latest,
@@ -34,7 +36,7 @@ from libtea.conformance._checks import (
     check_uuid_format,
 )
 from libtea.conformance._types import CheckStatus
-from tests.spec_data import V1_BASE_URL
+from tests.spec_data import COMPONENT, PRODUCT, V1_BASE_URL, product
 
 BASE_URL = "https://api.example.com/tea/v0.4.0"
 
@@ -258,6 +260,14 @@ class TestCheckDiscovery:
         assert result.status == CheckStatus.FAIL
 
     @responses.activate
+    def test_v1_fail_empty_array(self, v1):
+        responses.get(f"{V1_BASE_URL}/discovery", json=[])
+        result = check_discovery(v1, CheckContext(tei="tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"))
+        assert result.status == CheckStatus.FAIL
+        assert "must be a non-empty array" in result.message
+        assert "Unexpected error" not in result.message
+
+    @responses.activate
     def test_does_not_overwrite_existing_uuid(self):
         responses.get(f"{BASE_URL}/discovery", json=_DISCOVERY_RESULT)
         client = _make_client()
@@ -276,6 +286,37 @@ class TestCheckDiscovery:
 
 
 class TestCheckDiscovery404:
+    @responses.activate
+    def test_v1_uses_tei_uri(self, v1):
+        responses.get(f"{V1_BASE_URL}/discovery", status=404, json={"error": "OBJECT_UNKNOWN"})
+        result = check_discovery_404(v1, CheckContext())
+        assert result.status == CheckStatus.PASS
+        assert len(responses.calls) == 1
+        assert "tei%3A%2F%2Fnonexistent.example.com%2Fuuid%2F" + _ZERO_UUID in responses.calls[0].request.url
+
+    @responses.activate
+    def test_legacy_keeps_urn(self, legacy):
+        responses.get(f"{BASE_URL}/discovery", status=404, json={"error": "OBJECT_UNKNOWN"})
+        result = check_discovery_404(legacy, CheckContext())
+        assert result.status == CheckStatus.PASS
+        assert len(responses.calls) == 1
+        assert "urn%3Atei%3Auuid%3Anonexistent.example.com" in responses.calls[0].request.url
+
+    @responses.activate
+    def test_v1_fail_on_empty_array(self, v1):
+        responses.get(f"{V1_BASE_URL}/discovery", json=[])
+        result = check_discovery_404(v1, CheckContext())
+        assert result.status == CheckStatus.FAIL
+        assert "must be a non-empty array" in result.message
+        assert "Unexpected error" not in result.message
+
+    @responses.activate
+    def test_v1_fail_when_results_returned(self, v1):
+        responses.get(f"{V1_BASE_URL}/discovery", json=_DISCOVERY_RESULT)
+        result = check_discovery_404(v1, CheckContext())
+        assert result.status == CheckStatus.FAIL
+        assert result.message == "Expected 404, got 1 result(s)"
+
     @responses.activate
     def test_pass_on_404(self):
         responses.get(f"{BASE_URL}/discovery", json={"error": "OBJECT_UNKNOWN"}, status=404)
@@ -1268,6 +1309,7 @@ class TestCheckPaginationFields:
         )
         result = check_pagination_fields(v1, CheckContext())
         assert result.status == CheckStatus.PASS
+        assert result.message == "Page size respected (1 result(s) for pageSize=10)"
 
     @responses.activate
     def test_v1_fail_when_page_overflows(self, v1):
@@ -1275,6 +1317,60 @@ class TestCheckPaginationFields:
         result = check_pagination_fields(v1, CheckContext())
         assert result.status == CheckStatus.FAIL
         assert "got 11 results" in result.details
+
+
+class TestCheckPaginationToken:
+    @responses.activate
+    def test_pass(self, v1):
+        responses.get(
+            f"{V1_BASE_URL}/products",
+            match=[matchers.query_param_matcher({"pageSize": "1"})],
+            json={"hasNext": True, "nextPageToken": "t", "results": [product(PRODUCT, "A")]},
+        )
+        responses.get(
+            f"{V1_BASE_URL}/products",
+            match=[matchers.query_param_matcher({"pageSize": "1", "pageToken": "t"})],
+            json={"hasNext": False, "results": [product(COMPONENT, "B")]},
+        )
+        result = check_pagination_token(v1, CheckContext())
+        assert result.status == CheckStatus.PASS
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_same_page_fails(self, v1):
+        responses.get(
+            f"{V1_BASE_URL}/products",
+            match=[matchers.query_param_matcher({"pageSize": "1"})],
+            json={"hasNext": True, "nextPageToken": "t", "results": [product(PRODUCT, "A")]},
+        )
+        responses.get(
+            f"{V1_BASE_URL}/products",
+            match=[matchers.query_param_matcher({"pageSize": "1", "pageToken": "t"})],
+            json={"hasNext": False, "results": [product(PRODUCT, "A")]},
+        )
+        result = check_pagination_token(v1, CheckContext())
+        assert result.status == CheckStatus.FAIL
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_single_page_skips(self, v1):
+        responses.get(f"{V1_BASE_URL}/products", json={"hasNext": False, "results": []})
+        result = check_pagination_token(v1, CheckContext())
+        assert result.status == CheckStatus.SKIP
+        assert len(responses.calls) == 1
+
+    @responses.activate
+    def test_skips_legacy(self, legacy):
+        result = check_pagination_token(legacy, CheckContext())
+        assert result.status == CheckStatus.SKIP
+        assert len(responses.calls) == 0
+
+    @responses.activate
+    def test_fail_on_server_error(self, v1):
+        responses.get(f"{V1_BASE_URL}/products", status=500)
+        result = check_pagination_token(v1, CheckContext())
+        assert result.status == CheckStatus.FAIL
+        assert "list_products() failed" in result.message
 
 
 class TestCheckCamelCaseFields:
@@ -1369,7 +1465,9 @@ class TestAllChecksRegistry:
         assert ALL_CHECKS[1].__name__ == "check_discovery_404"
 
     def test_cross_cutting_checks_come_last(self):
-        last_three = [c.__name__ for c in ALL_CHECKS[-3:]]
-        assert "check_uuid_format" in last_three
-        assert "check_pagination_fields" in last_three
-        assert "check_camel_case_fields" in last_three
+        assert [c.__name__ for c in ALL_CHECKS[-4:]] == [
+            "check_uuid_format",
+            "check_pagination_fields",
+            "check_pagination_token",
+            "check_camel_case_fields",
+        ]

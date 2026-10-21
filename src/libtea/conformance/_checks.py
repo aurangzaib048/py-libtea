@@ -13,12 +13,14 @@ from dataclasses import dataclass, field
 
 from libtea.client import TeaClient
 from libtea.conformance._types import CheckResult, CheckStatus
-from libtea.exceptions import TeaError, TeaNotFoundError
+from libtea.exceptions import TeaError, TeaNotFoundError, TeaValidationError
 
 # Canonical zero UUID used for 404 tests.
 _ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+_EMPTY_DISCOVERY = "a successful discovery response must be a non-empty array (TEA 1.0.0)"
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +66,11 @@ def _warn(name: str, msg: str) -> CheckResult:
     return CheckResult(name=name, status=CheckStatus.WARN, message=msg)
 
 
+def _is_empty_discovery(exc: TeaError) -> bool:
+    """True when ``discover()`` rejected an empty array, which TEA 1.x forbids in a successful response."""
+    return isinstance(exc, TeaValidationError) and "non-empty array" in str(exc)
+
+
 def _collect(ctx: CheckContext, uuid: str | None) -> None:
     """Append a UUID to the collected list if it looks non-empty."""
     if uuid:
@@ -83,6 +90,8 @@ def check_discovery(client: TeaClient, ctx: CheckContext) -> CheckResult:
     try:
         results = client.discover(ctx.tei)
     except TeaError as exc:
+        if _is_empty_discovery(exc):
+            return _fail(name, f"discover() returned an empty array: {_EMPTY_DISCOVERY}")
         return _fail(name, f"discover() failed: {exc}", details=str(exc))
     if not results:
         return _fail(name, "discover() returned empty list")
@@ -93,18 +102,24 @@ def check_discovery(client: TeaClient, ctx: CheckContext) -> CheckResult:
 
 
 def check_discovery_404(client: TeaClient, ctx: CheckContext) -> CheckResult:
-    """Discover a fake TEI and expect TeaNotFoundError or empty list."""
+    """Discover a fake TEI and expect TeaNotFoundError (or, on TEA 0.x, an empty list)."""
     name = "discovery_404"
-    fake_tei = "urn:tei:uuid:nonexistent.example.com:00000000-0000-0000-0000-000000000000"
+    if client.is_legacy:
+        fake_tei = f"urn:tei:uuid:nonexistent.example.com:{_ZERO_UUID}"
+    else:
+        fake_tei = f"tei://nonexistent.example.com/uuid/{_ZERO_UUID}"
     try:
         results = client.discover(fake_tei)
     except TeaNotFoundError:
         return _pass(name, "Server returned 404 for unknown TEI")
     except TeaError as exc:
+        if _is_empty_discovery(exc):
+            return _fail(name, f"Expected 404 for unknown TEI, got an empty array: {_EMPTY_DISCOVERY}")
         return _fail(name, f"Unexpected error: {exc}", details=str(exc))
     if not results:
         return _pass(name, "Server returned empty list for unknown TEI")
-    return _fail(name, f"Expected 404 or empty list, got {len(results)} result(s)")
+    expected = "404 or empty list" if client.is_legacy else "404"
+    return _fail(name, f"Expected {expected}, got {len(results)} result(s)")
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +509,7 @@ def check_pagination_fields(client: TeaClient, ctx: CheckContext) -> CheckResult
 
     issues: list[str] = []
     if client.is_legacy:
+        passed = "Pagination metadata fields present and valid"
         if result.page_size != 10:
             issues.append(f"page_size: requested 10, got {result.page_size!r}")
         if result.page_start_index is None or result.page_start_index < 0:
@@ -502,12 +518,34 @@ def check_pagination_fields(client: TeaClient, ctx: CheckContext) -> CheckResult
             issues.append(f"total_results is missing or negative: {result.total_results!r}")
         if not result.timestamp:
             issues.append("timestamp is missing")
-    elif len(result.results) > 10:
+    else:
         # TEA 1.x pages carry no totals; hasNext/nextPageToken consistency is enforced by the model.
-        issues.append(f"page_size: requested 10, got {len(result.results)} results")
+        passed = f"Page size respected ({len(result.results)} result(s) for pageSize=10)"
+        if len(result.results) > 10:
+            issues.append(f"page_size: requested 10, got {len(result.results)} results")
     if issues:
         return _fail(name, "Pagination metadata issues", details="; ".join(issues))
-    return _pass(name, "Pagination metadata fields present and valid")
+    return _pass(name, passed)
+
+
+def check_pagination_token(client: TeaClient, ctx: CheckContext) -> CheckResult:
+    """Follow ``nextPageToken`` from a one-item page and expect a different page back (TEA 1.x only)."""
+    name = "pagination_token"
+    if client.is_legacy:
+        return _skip(name, "pageToken pagination applies to TEA 1.x only")
+    try:
+        first = client.list_products(page_size=1)
+        if not first.next_page_token:
+            return _skip(name, "Fewer than two products on server")
+        second = client.list_products(page_token=first.next_page_token, page_size=1)
+    except TeaError as exc:
+        return _fail(name, f"list_products() failed: {exc}", details=str(exc))
+    repeated = {p.uuid for p in first.results} & {p.uuid for p in second.results}
+    if repeated:
+        return _fail(
+            name, "pageToken did not advance: page 2 repeated results from page 1", details=", ".join(repeated)
+        )
+    return _pass(name, "pageToken advanced to a different page")
 
 
 def check_camel_case_fields(client: TeaClient, ctx: CheckContext) -> CheckResult:
@@ -558,5 +596,6 @@ ALL_CHECKS: list[Callable[[TeaClient, CheckContext], CheckResult]] = [
     # Cross-cutting
     check_uuid_format,
     check_pagination_fields,
+    check_pagination_token,
     check_camel_case_fields,
 ]

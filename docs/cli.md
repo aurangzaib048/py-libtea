@@ -308,7 +308,7 @@ tea-cli get-cle [--entity TYPE] UUID
 
 ### conformance
 
-Run conformance checks against a TEA server. Validates that the server correctly implements the TEA specification by running 27 checks covering discovery, products, releases, components, artifacts, CLE, and cross-cutting concerns.
+Run conformance checks against a TEA server. Validates that the server correctly implements the TEA specification by running 28 checks covering discovery, products, releases, components, artifacts, CLE, and cross-cutting concerns.
 
 ```
 tea-cli conformance --base-url URL [OPTIONS]
