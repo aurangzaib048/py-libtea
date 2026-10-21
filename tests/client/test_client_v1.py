@@ -426,8 +426,38 @@ def test_token_not_forwarded_on_redirect_to_api_host(tmp_path):
     )
     responses.get("https://api.example.com/blobs/abc", body=b"{}")
     c.download_artifact_content(ARTIFACT, tmp_path / "a.json", media_type=MEDIA, version=2)
+    assert responses.calls[0].request.headers["Authorization"] == "Bearer secret"
     assert responses.calls[1].request.url == "https://api.example.com/blobs/abc"
     assert "Authorization" not in responses.calls[1].request.headers
+
+
+@responses.activate
+def test_basic_auth_not_forwarded_on_redirect(tmp_path):
+    c = TeaClient(V1_BASE_URL, basic_auth=("u", "p"))
+    responses.get(
+        f"{V1_BASE_URL}/artifact/{ARTIFACT}/2/download",
+        status=302,
+        headers={"Location": "https://cdn.example.com/blob/abc"},
+    )
+    responses.get("https://cdn.example.com/blob/abc", body=b"{}")
+    c.download_artifact_content(ARTIFACT, tmp_path / "a.json", media_type=MEDIA, version=2)
+    assert responses.calls[0].request.headers["Authorization"] == "Basic dTpw"  # base64("u:p")
+    assert "Authorization" not in responses.calls[1].request.headers
+
+
+@responses.activate
+def test_download_rejects_https_to_http_redirect(tmp_path):
+    c = TeaClient(V1_BASE_URL, token="secret")
+    responses.get(
+        f"{V1_BASE_URL}/artifact/{ARTIFACT}/2/download",
+        status=302,
+        headers={"Location": "http://cdn.example.com/blob/abc"},
+    )
+    dest = tmp_path / "a.json"
+    with pytest.raises(TeaValidationError, match="HTTPS to HTTP"):
+        c.download_artifact_content(ARTIFACT, dest, media_type=MEDIA, version=2)
+    assert len(responses.calls) == 1
+    assert not dest.exists()
 
 
 @responses.activate

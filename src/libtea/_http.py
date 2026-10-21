@@ -298,7 +298,8 @@ class TeaHttpClient:
             ValueError: If ``authenticated`` and ``url`` is not under the API base.
             TeaConnectionError: On network failure. Partial files are deleted.
             TeaChecksumError: If an unsupported algorithm is requested.
-            TeaValidationError: If download exceeds max_download_bytes or fails SSRF check.
+            TeaValidationError: If download exceeds max_download_bytes, fails SSRF check, or a redirect
+                downgrades HTTPS to HTTP.
         """
         if authenticated:
             if not url.startswith(f"{self._base_url}/"):
@@ -330,8 +331,11 @@ class TeaHttpClient:
                             location = response.headers.get("Location")
                             if not location:
                                 raise TeaRequestError(f"Redirect without Location header: HTTP {response.status_code}")
-                            current_url = urljoin(current_url, location)
-                            _validate_download_url(current_url, allow_private_ips=allow_private_ips)
+                            next_url = urljoin(current_url, location)
+                            _validate_download_url(next_url, allow_private_ips=allow_private_ips)
+                            if urlparse(current_url).scheme == "https" and urlparse(next_url).scheme == "http":
+                                raise TeaValidationError(f"Download redirect downgraded HTTPS to HTTP: {next_url}")
+                            current_url = next_url
                             session, params = download_session, None
                             response.close()
                             response = None
