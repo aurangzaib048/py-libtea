@@ -12,6 +12,7 @@ click = pytest.importorskip("click", reason="click not installed (install libtea
 from click.testing import CliRunner  # noqa: E402
 
 from libtea.cli import app  # noqa: E402
+from tests.spec_data import LEGACY  # noqa: E402
 
 runner = CliRunner()
 
@@ -1610,10 +1611,14 @@ class TestDownloadTeiMode:
                 "version": 1,
                 "artifacts": [
                     {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
                         "name": "BadArt",
                         "formats": [{"url": bad_url, "checksums": []}],
                     },
                     {
+                        "uuid": "art-uuid-2",
+                        "type": "BOM",
                         "name": "GoodArt",
                         "formats": [{"url": good_url, "checksums": []}],
                     },
@@ -1648,7 +1653,14 @@ class TestDownloadTeiMode:
             json={
                 "uuid": pr_uuid,
                 "version": 1,
-                "artifacts": [{"name": "SBOM", "formats": [{"url": artifact_url, "checksums": []}]}],
+                "artifacts": [
+                    {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
+                        "name": "SBOM",
+                        "formats": [{"url": artifact_url, "checksums": []}],
+                    }
+                ],
             },
         )
         responses.get(artifact_url, status=500)
@@ -1725,6 +1737,8 @@ class TestDownloadTeiMode:
                 "version": 1,
                 "artifacts": [
                     {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
                         "name": "SBOM",
                         "formats": [
                             {"mediaType": "application/xml", "checksums": []},
@@ -1769,6 +1783,8 @@ class TestDownloadTeiMode:
                 "version": 1,
                 "artifacts": [
                     {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
                         "name": "SBOM",
                         "formats": [
                             {
@@ -1803,6 +1819,8 @@ class TestDownloadTeiMode:
                 "version": 1,
                 "artifacts": [
                     {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
                         "name": "SBOM",
                         "formats": [
                             {
@@ -1857,11 +1875,23 @@ class TestDownloadTeiMode:
         )
         responses.get(
             f"{BASE_URL}/productRelease/{pr1}/collection/latest",
-            json={"uuid": pr1, "version": 1, "artifacts": [{"name": "A", "formats": [{"url": url1, "checksums": []}]}]},
+            json={
+                "uuid": pr1,
+                "version": 1,
+                "artifacts": [
+                    {"uuid": "art-uuid-1", "type": "BOM", "name": "A", "formats": [{"url": url1, "checksums": []}]}
+                ],
+            },
         )
         responses.get(
             f"{BASE_URL}/productRelease/{pr2}/collection/latest",
-            json={"uuid": pr2, "version": 1, "artifacts": [{"name": "B", "formats": [{"url": url2, "checksums": []}]}]},
+            json={
+                "uuid": pr2,
+                "version": 1,
+                "artifacts": [
+                    {"uuid": "art-uuid-2", "type": "BOM", "name": "B", "formats": [{"url": url2, "checksums": []}]}
+                ],
+            },
         )
         responses.get(url1, body=b"one")
         responses.get(url2, body=b"two")
@@ -1888,8 +1918,8 @@ class TestDownloadTeiMode:
                 "uuid": pr_uuid,
                 "version": 1,
                 "artifacts": [
-                    {"name": "A", "formats": [{"url": url1, "checksums": []}]},
-                    {"name": "B", "formats": [{"url": url2, "checksums": []}]},
+                    {"uuid": "art-uuid-1", "type": "BOM", "name": "A", "formats": [{"url": url1, "checksums": []}]},
+                    {"uuid": "art-uuid-2", "type": "BOM", "name": "B", "formats": [{"url": url2, "checksums": []}]},
                 ],
             },
         )
@@ -1904,66 +1934,71 @@ class TestDownloadTeiMode:
         assert (dest / "sbom-1.json").read_bytes() == b"second"
 
 
+def _legacy_format(**fields):
+    from libtea.models import ArtifactFormat
+
+    return ArtifactFormat.model_validate(fields, context=LEGACY)
+
+
+def _legacy_artifact(**fields):
+    from libtea.models import Artifact
+
+    return Artifact.model_validate({"uuid": "art-uuid-1", "type": "BOM", "formats": [], **fields}, context=LEGACY)
+
+
 class TestArtifactFilename:
     """Tests for _artifact_filename derivation logic."""
 
     def test_filename_from_url(self):
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(url="https://cdn.example.com/path/to/sbom.cdx.json")
-        art = Artifact(name="SBOM")
+        fmt = _legacy_format(url="https://cdn.example.com/path/to/sbom.cdx.json")
+        art = _legacy_artifact(name="SBOM")
         assert _artifact_filename(fmt, art, 0) == "sbom.cdx.json"
 
     def test_filename_fallback_to_artifact_name(self):
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(media_type="application/json")
-        art = Artifact(name="my-sbom")
+        fmt = _legacy_format(media_type="application/json")
+        art = _legacy_artifact(name="my-sbom")
         assert _artifact_filename(fmt, art, 0) == "my-sbom.json"
 
     def test_filename_fallback_no_name(self):
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(media_type="application/vnd.cyclonedx+json")
-        art = Artifact()
+        fmt = _legacy_format(media_type="application/vnd.cyclonedx+json")
+        art = _legacy_artifact()
         assert _artifact_filename(fmt, art, 3) == "artifact-3.cdx.json"
 
     def test_filename_url_without_extension_falls_back(self):
         """URLs ending in generic segments like /download use artifact name instead."""
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(url="https://cdn.example.com/artifacts/uuid/download", media_type="application/json")
-        art = Artifact(name="my-sbom")
+        fmt = _legacy_format(url="https://cdn.example.com/artifacts/uuid/download", media_type="application/json")
+        art = _legacy_artifact(name="my-sbom")
         assert _artifact_filename(fmt, art, 0) == "my-sbom.json"
 
     def test_filename_unknown_media_type(self):
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(media_type="application/octet-stream")
-        art = Artifact(name="blob")
+        fmt = _legacy_format(media_type="application/octet-stream")
+        art = _legacy_artifact(name="blob")
         assert _artifact_filename(fmt, art, 0) == "blob"
 
     def test_filename_path_traversal_sanitized(self):
         """Malicious artifact names with path traversal are sanitized."""
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(media_type="application/json")
-        art = Artifact(name="../../etc/passwd")
+        fmt = _legacy_format(media_type="application/json")
+        art = _legacy_artifact(name="../../etc/passwd")
         assert _artifact_filename(fmt, art, 0) == "passwd.json"
 
     def test_filename_absolute_path_sanitized(self):
         """Absolute path in artifact name is sanitized to basename."""
         from libtea.cli import _artifact_filename
-        from libtea.models import Artifact, ArtifactFormat
 
-        fmt = ArtifactFormat(media_type="application/json")
-        art = Artifact(name="/etc/cron.d/malicious")
+        fmt = _legacy_format(media_type="application/json")
+        art = _legacy_artifact(name="/etc/cron.d/malicious")
         assert _artifact_filename(fmt, art, 0) == "malicious.json"
 
     def test_ext_from_media_type(self):
@@ -2112,7 +2147,12 @@ class TestCLIUXImprovements:
                 "uuid": pr_uuid,
                 "version": 1,
                 "artifacts": [
-                    {"name": "SBOM", "formats": [{"url": artifact_url, "checksums": []}]},
+                    {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
+                        "name": "SBOM",
+                        "formats": [{"url": artifact_url, "checksums": []}],
+                    },
                 ],
             },
         )
@@ -2149,7 +2189,12 @@ class TestCLIUXImprovements:
                 "uuid": pr_uuid,
                 "version": 1,
                 "artifacts": [
-                    {"name": "SBOM", "formats": [{"url": artifact_url, "checksums": []}]},
+                    {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
+                        "name": "SBOM",
+                        "formats": [{"url": artifact_url, "checksums": []}],
+                    },
                 ],
             },
         )

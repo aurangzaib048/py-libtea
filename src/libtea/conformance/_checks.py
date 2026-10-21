@@ -261,11 +261,9 @@ def check_product_release_collection_latest(client: TeaClient, ctx: CheckContext
     except TeaError as exc:
         return _fail(name, f"get_product_release_collection_latest() failed: {exc}", details=str(exc))
     if collection.artifacts:
-        for artifact in collection.artifacts:
-            if artifact.uuid:
-                ctx.artifact_uuid = ctx.artifact_uuid or artifact.uuid
-                _collect(ctx, artifact.uuid)
-                break
+        artifact = collection.artifacts[0]
+        ctx.artifact_uuid = ctx.artifact_uuid or artifact.uuid
+        _collect(ctx, artifact.uuid)
     return _pass(name, f"Got collection v{collection.version} with {len(collection.artifacts)} artifact(s)")
 
 
@@ -341,11 +339,9 @@ def check_component_release(client: TeaClient, ctx: CheckContext) -> CheckResult
         return _fail(name, f"get_component_release() failed: {exc}", details=str(exc))
     _collect(ctx, result.release.uuid)
     if result.latest_collection and result.latest_collection.artifacts:
-        for artifact in result.latest_collection.artifacts:
-            if artifact.uuid:
-                ctx.artifact_uuid = ctx.artifact_uuid or artifact.uuid
-                _collect(ctx, artifact.uuid)
-                break
+        artifact = result.latest_collection.artifacts[0]
+        ctx.artifact_uuid = ctx.artifact_uuid or artifact.uuid
+        _collect(ctx, artifact.uuid)
     return _pass(name, f"Got release v{result.release.version}")
 
 

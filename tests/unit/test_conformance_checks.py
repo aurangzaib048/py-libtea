@@ -120,7 +120,7 @@ _PAGINATED_RELEASES_EMPTY = {
 
 _COLLECTION_JSON = {
     "version": 1,
-    "artifacts": [{"uuid": _ARTIFACT_UUID, "name": "sbom.json", "formats": []}],
+    "artifacts": [{"uuid": _ARTIFACT_UUID, "name": "sbom.json", "type": "BOM", "formats": []}],
 }
 
 _COLLECTION_NO_ARTIFACTS_JSON = {
@@ -154,6 +154,7 @@ _COMPONENT_RELEASE_NO_ARTIFACTS_JSON = {
 _ARTIFACT_JSON = {
     "uuid": _ARTIFACT_UUID,
     "name": "sbom.json",
+    "type": "BOM",
     "formats": [],
 }
 
@@ -734,43 +735,6 @@ class TestCheckProductReleaseCollectionLatest:
         check_product_release_collection_latest(client, ctx)
         assert ctx.artifact_uuid == "existing-uuid"
 
-    @responses.activate
-    def test_skips_artifact_with_no_uuid(self):
-        collection_json = {
-            "version": 1,
-            "artifacts": [
-                {"name": "no-uuid.json", "formats": []},
-                {"uuid": _ARTIFACT_UUID, "name": "sbom.json", "formats": []},
-            ],
-        }
-        responses.get(
-            f"{BASE_URL}/productRelease/{_RELEASE_UUID}/collection/latest",
-            json=collection_json,
-        )
-        client = _make_client()
-        ctx = CheckContext(product_release_uuid=_RELEASE_UUID)
-        check_product_release_collection_latest(client, ctx)
-        assert ctx.artifact_uuid == _ARTIFACT_UUID
-
-    @responses.activate
-    def test_all_artifacts_without_uuid(self):
-        collection_json = {
-            "version": 1,
-            "artifacts": [
-                {"name": "no-uuid-1.json", "formats": []},
-                {"name": "no-uuid-2.json", "formats": []},
-            ],
-        }
-        responses.get(
-            f"{BASE_URL}/productRelease/{_RELEASE_UUID}/collection/latest",
-            json=collection_json,
-        )
-        client = _make_client()
-        ctx = CheckContext(product_release_uuid=_RELEASE_UUID)
-        result = check_product_release_collection_latest(client, ctx)
-        assert result.status == CheckStatus.PASS
-        assert ctx.artifact_uuid is None
-
 
 class TestCheckProductReleaseCollections:
     @responses.activate
@@ -966,49 +930,6 @@ class TestCheckComponentRelease:
         check_component_release(client, ctx)
         assert ctx.artifact_uuid == "existing-uuid"
 
-    @responses.activate
-    def test_skips_artifact_with_no_uuid(self):
-        json_data = {
-            "release": _RELEASE_JSON,
-            "latestCollection": {
-                "version": 1,
-                "artifacts": [
-                    {"name": "no-uuid.json", "formats": []},
-                    {"uuid": _ARTIFACT_UUID, "name": "sbom.json", "formats": []},
-                ],
-            },
-        }
-        responses.get(
-            f"{BASE_URL}/componentRelease/{_COMPONENT_RELEASE_UUID}",
-            json=json_data,
-        )
-        client = _make_client()
-        ctx = CheckContext(component_release_uuid=_COMPONENT_RELEASE_UUID)
-        check_component_release(client, ctx)
-        assert ctx.artifact_uuid == _ARTIFACT_UUID
-
-    @responses.activate
-    def test_all_artifacts_without_uuid(self):
-        json_data = {
-            "release": _RELEASE_JSON,
-            "latestCollection": {
-                "version": 1,
-                "artifacts": [
-                    {"name": "no-uuid-1.json", "formats": []},
-                    {"name": "no-uuid-2.json", "formats": []},
-                ],
-            },
-        }
-        responses.get(
-            f"{BASE_URL}/componentRelease/{_COMPONENT_RELEASE_UUID}",
-            json=json_data,
-        )
-        client = _make_client()
-        ctx = CheckContext(component_release_uuid=_COMPONENT_RELEASE_UUID)
-        result = check_component_release(client, ctx)
-        assert result.status == CheckStatus.PASS
-        assert ctx.artifact_uuid is None
-
 
 class TestCheckComponentReleaseCollections:
     @responses.activate
@@ -1066,7 +987,7 @@ class TestCheckGetArtifact:
 
     @responses.activate
     def test_pass_artifact_without_name(self):
-        artifact_no_name = {"uuid": _ARTIFACT_UUID, "formats": []}
+        artifact_no_name = {"uuid": _ARTIFACT_UUID, "type": "BOM", "formats": []}
         responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", json=artifact_no_name)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
@@ -1366,6 +1287,7 @@ class TestCheckArtifactFormatsRequired:
         artifact_with_formats = {
             "uuid": _ARTIFACT_UUID,
             "name": "sbom.json",
+            "type": "BOM",
             "formats": [{"mediaType": "application/json", "url": "https://example.com/sbom.json"}],
         }
         responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", json=artifact_with_formats)

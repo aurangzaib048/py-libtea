@@ -5,7 +5,8 @@ import responses
 
 from libtea._validation import _validate, _validate_list
 from libtea.client import TeaClient
-from tests.spec_data import LEGACY_BASE_URL, PRODUCT, V1_BASE_URL, product
+from libtea.exceptions import TeaValidationError
+from tests.spec_data import COMPONENT_RELEASE, LEGACY_BASE_URL, PRODUCT, V1_BASE_URL, product
 
 
 class TestSpecVersion:
@@ -50,3 +51,13 @@ class TestLegacyFlagReachesValidation:
         with patch("libtea.client._validate_list", wraps=_validate_list) as spy:
             client.discover("urn:tei:purl:example.com:pkg:pypi/lib@1.0")
         assert spy.call_args.kwargs == {"legacy": expected}
+
+
+@responses.activate
+def test_v1_client_rejects_incomplete_collection():
+    responses.get(
+        f"{V1_BASE_URL}/componentRelease/{COMPONENT_RELEASE}/collection/latest",
+        json={"uuid": COMPONENT_RELEASE, "version": 1},
+    )
+    with pytest.raises(TeaValidationError, match="Collection"):
+        TeaClient(V1_BASE_URL).get_component_release_collection_latest(COMPONENT_RELEASE)

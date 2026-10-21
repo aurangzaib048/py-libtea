@@ -668,19 +668,14 @@ class TeaClient:
             TeaConnectionError: On network failure.
             TeaValidationError: If download exceeds max_download_bytes.
         """
-        if verify_checksums:
-            # Skip checksums with missing algorithm_type or algorithm_value (optional per spec)
-            verify_checksums = [cs for cs in verify_checksums if cs.algorithm_type and cs.algorithm_value]
-            alg_names = {cs.algorithm_type.value for cs in verify_checksums if cs.algorithm_type}
-            weak = alg_names & WEAK_HASH_ALGORITHMS
+        algorithms = [cs.algorithm_type.value for cs in verify_checksums] if verify_checksums else None
+        if algorithms:
+            weak = set(algorithms) & WEAK_HASH_ALGORITHMS
             if weak:
                 warnings.warn(
                     f"Verifying with weak hash algorithm(s): {', '.join(sorted(weak))}. Prefer SHA-256 or stronger.",
                     stacklevel=2,
                 )
-        algorithms = (
-            [cs.algorithm_type.value for cs in verify_checksums if cs.algorithm_type] if verify_checksums else None
-        )
         computed = self._http.download_with_hashes(
             url,
             dest,
@@ -705,8 +700,6 @@ class TeaClient:
             TeaChecksumError: If any checksum does not match.
         """
         for cs in checksums:
-            if cs.algorithm_type is None or cs.algorithm_value is None:
-                continue  # skip incomplete checksums (fields optional per spec)
             alg_name = cs.algorithm_type.value
             expected = cs.algorithm_value.lower()
             if alg_name not in computed:

@@ -3,14 +3,23 @@
 All models use camelCase aliases for JSON serialization (matching the TEA wire
 format), are frozen (immutable after creation), and silently ignore unknown
 fields for forward-compatibility with future TEA spec versions.
+
+Fields required by both TEA 0.4.0 and 1.0.0 are non-optional types. Fields
+required only by 1.0.0 are optional types that are rejected when missing,
+unless the model is validated with ``context={"tea_legacy": True}``.
 """
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, ClassVar, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic.alias_generators import to_camel
+
+
+def _is_legacy(info: ValidationInfo) -> bool:
+    """Return ``True`` when validating in the TEA 0.4.0 compatibility context."""
+    return bool(info.context and info.context.get("tea_legacy"))
 
 
 class _TeaModel(BaseModel):
@@ -21,6 +30,11 @@ class _TeaModel(BaseModel):
         - ``populate_by_name=True``: Fields can be set by Python name or alias.
         - ``extra="ignore"``: Unknown fields from newer spec versions are silently dropped.
         - ``frozen=True``: Instances are immutable (hashable, safe to cache).
+
+    TEA 1.0.0 rules: fields named in ``_v1_required`` must not be ``None``.
+    Subclasses add other 1.0.0-only checks by overriding :meth:`_v1_problems`
+    and extending ``super()._v1_problems()``. The checks are skipped under the
+    legacy validation context.
     """
 
     model_config = ConfigDict(
@@ -29,6 +43,17 @@ class _TeaModel(BaseModel):
         extra="ignore",  # forward-compat: silently drop unknown fields from future spec versions
         frozen=True,
     )
+
+    _v1_required: ClassVar[tuple[str, ...]] = ()
+
+    def _v1_problems(self) -> list[str]:
+        return [f"missing required field {n!r}" for n in self._v1_required if getattr(self, n) is None]
+
+    @model_validator(mode="after")
+    def _enforce_v1(self, info: ValidationInfo) -> Self:
+        if not _is_legacy(info) and (problems := self._v1_problems()):
+            raise ValueError(f"{type(self).__name__}: {'; '.join(problems)} (TEA 1.0.0)")
+        return self
 
 
 # --- Enums ---
@@ -60,7 +85,7 @@ class ComplianceDocumentType(StrEnum):
     ISO_42001 = "ISO_42001"
     PCI_DSS = "PCI_DSS"
     HIPAA = "HIPAA"
-    FEDRAMP = "FedRAMP"
+    FEDRAMP = "FEDRAMP"
     GDPR = "GDPR"
     CSA_STAR = "CSA_STAR"
     NIST_800_53 = "NIST_800_53"
@@ -70,6 +95,7 @@ class ComplianceDocumentType(StrEnum):
     TISAX = "TISAX"
     CYBER_ESSENTIALS = "CYBER_ESSENTIALS"
     CYBER_ESSENTIALS_PLUS = "CYBER_ESSENTIALS_PLUS"
+    EU_DECLARATION_OF_CONFORMITY = "EU_DECLARATION_OF_CONFORMITY"
 
 
 class TeiType(StrEnum):
@@ -183,8 +209,10 @@ class Identifier(_TeaModel):
     future TEA spec versions. Compare against :class:`IdentifierType` members
     for known types (e.g. ``ident.id_type == IdentifierType.PURL``).
 
-    Per spec, neither field is required.
+    Both fields are required by TEA 1.0.0; 0.4.0 servers may omit either.
     """
+
+    _v1_required = ("id_type", "id_value")
 
     id_type: str | None = None
     id_value: str | None = None
@@ -200,8 +228,8 @@ class Checksum(_TeaModel):
     # Manual aliases because the TEA spec wire format uses abbreviated names
     # (algType/algValue) rather than the full algorithmType/algorithmValue
     # that to_camel would generate from the Python field names.
-    algorithm_type: ChecksumAlgorithm | None = Field(default=None, alias="algType")
-    algorithm_value: str | None = Field(default=None, alias="algValue")
+    algorithm_type: ChecksumAlgorithm = Field(alias="algType")
+    algorithm_value: str = Field(alias="algValue")
 
     @field_validator("algorithm_type", mode="before")
     @classmethod
@@ -222,16 +250,9 @@ class Checksum(_TeaModel):
 
 
 class ReleaseDistribution(_TeaModel):
-    """A distribution format for a component release (e.g. binary, source).
+    """A distribution format for a component release (e.g. binary, source)."""
 
-    As of spec v0.4.0, ``distribution_id`` is required and ``distribution_type``
-    has been removed.  Both fields are kept as **optional** in the model for
-    backward compatibility with older servers that still send
-    ``distributionType`` instead.
-    """
-
-    distribution_id: str | None = None
-    distribution_type: str | None = None
+    distribution_id: str
     description: str | None = None
     identifiers: tuple[Identifier, ...] = ()
     url: str | None = None
@@ -240,7 +261,12 @@ class ReleaseDistribution(_TeaModel):
 
 
 class ArtifactFormat(_TeaModel):
-    """A TEA artifact in a specific format with download URL and checksums."""
+    """A TEA artifact in a specific format with download URL and checksums.
+
+    TEA 1.0.0 requires ``media_type``, and at least one checksum when ``url`` is set.
+    """
+
+    _v1_required = ("media_type",)
 
     media_type: str | None = None
     description: str | None = None
@@ -248,39 +274,43 @@ class ArtifactFormat(_TeaModel):
     signature_url: str | None = None
     checksums: tuple[Checksum, ...] = ()
 
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_mime_type(cls, data: dict) -> dict:  # type: ignore[type-arg]
-        """Accept ``mimeType`` as an alias for ``mediaType`` (older server compat)."""
-        if isinstance(data, dict) and "mimeType" in data and "mediaType" not in data:
-            data["mediaType"] = data.pop("mimeType")
-        return data
+    def _v1_problems(self) -> list[str]:
+        problems = super()._v1_problems()
+        if self.url is not None and not self.checksums:
+            problems.append("'checksums' must not be empty when 'url' is set")
+        return problems
 
 
 class Artifact(_TeaModel):
     """A security-related artifact (e.g. SBOM, VEX, attestation) with available formats.
 
-    As of spec v0.4.0, ``uuid`` is required and ``distribution_ids`` replaces
-    ``distribution_types``.  All fields are kept as **optional** in the model
-    for backward compatibility with older servers that may omit ``uuid`` or
-    still send ``distributionTypes``.
+    TEA 1.0.0 also requires ``version``, ``created_date`` and at least one format.
     """
 
-    uuid: str | None = None
+    _v1_required = ("version", "created_date")
+
+    uuid: str
     name: str | None = None
-    type: ArtifactType | None = None
+    type: ArtifactType
     version: int | None = Field(default=None, ge=1)
     created_date: datetime | None = None
     distribution_ids: tuple[str, ...] | None = None
-    distribution_types: tuple[str, ...] | None = None
-    formats: tuple[ArtifactFormat, ...] = ()
+    formats: tuple[ArtifactFormat, ...]
+
+    def _v1_problems(self) -> list[str]:
+        problems = super()._v1_problems()
+        if not self.formats:
+            problems.append("'formats' must not be empty")
+        return problems
 
 
 class CollectionUpdateReason(_TeaModel):
     """Reason for a collection version update, with optional comment.
 
-    Per spec, no fields are required.
+    TEA 1.0.0 requires ``type``.
     """
+
+    _v1_required = ("type",)
 
     type: CollectionUpdateReasonType | None = None
     comment: str | None = None
@@ -291,23 +321,34 @@ class Collection(_TeaModel):
 
     The UUID matches the owning component or product release. The version
     integer starts at 1 and increments on each content change.
-    Per spec, all fields are optional.
+    TEA 1.0.0 requires ``uuid``, ``version``, ``created_date``, ``belongs_to`` and
+    ``update_reason``; 0.4.0 requires none and names the creation timestamp ``date``.
 
     Attributes:
         uuid: UUID of the owning component or product release.
         version: Collection version number (starts at 1, increments on change).
-        date: Timestamp when this collection version was created.
+        created_date: Timestamp when this collection version was created.
         belongs_to: Whether this collection belongs to a component or product release.
         update_reason: Why this collection version was created.
         artifacts: The artifacts (SBOMs, VEX documents, etc.) in this collection.
     """
 
+    _v1_required = ("uuid", "version", "created_date", "belongs_to", "update_reason")
+
     uuid: str | None = None
     version: int | None = Field(default=None, ge=1)
-    date: datetime | None = None
+    created_date: datetime | None = None
     belongs_to: CollectionBelongsTo | None = None
     update_reason: CollectionUpdateReason | None = None
     artifacts: tuple[Artifact, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_legacy_date(cls, data: Any, info: ValidationInfo) -> Any:
+        """Map the 0.4.0 ``date`` key to ``createdDate`` (legacy context only)."""
+        if _is_legacy(info) and isinstance(data, dict) and "date" in data:
+            return {"createdDate": data["date"], **data}
+        return data
 
 
 class ComponentRef(_TeaModel):
@@ -330,7 +371,7 @@ class Release(_TeaModel):
 
     Attributes:
         uuid: Server-assigned UUID.
-        component: UUID of the parent component (set when returned in context).
+        component: UUID of the parent component (required by TEA 1.0.0).
         component_name: Human-readable name of the parent component.
         version: Version string (e.g. ``"1.2.3"``).
         created_date: When the release record was created on the TEA server.
@@ -339,6 +380,8 @@ class Release(_TeaModel):
         identifiers: External identifiers (PURLs, CPEs, etc.).
         distributions: Available distribution formats (binary, source, etc.).
     """
+
+    _v1_required = ("component",)
 
     uuid: str
     component: str | None = None
@@ -377,7 +420,7 @@ class ProductRelease(_TeaModel):
 
     Attributes:
         uuid: Server-assigned UUID.
-        product: UUID of the parent product (set when returned in context).
+        product: UUID of the parent product (required by TEA 1.0.0).
         product_name: Human-readable name of the parent product.
         version: Version string (e.g. ``"2.0.0"``).
         created_date: When the release record was created on the TEA server.
@@ -386,6 +429,8 @@ class ProductRelease(_TeaModel):
         identifiers: External identifiers (PURLs, CPEs, etc.).
         components: References to the components included in this product release.
     """
+
+    _v1_required = ("product",)
 
     uuid: str
     product: str | None = None

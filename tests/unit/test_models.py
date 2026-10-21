@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
+
 import pytest
 from pydantic import ValidationError
 
 from libtea.models import (
     CLE,
+    Artifact,
     ArtifactFormat,
     ArtifactType,
     Checksum,
@@ -26,6 +29,7 @@ from libtea.models import (
     Release,
     TeiType,
 )
+from tests.spec_data import COMPONENT_RELEASE, LEGACY, V1_ARTIFACT, V1_COLLECTION
 
 
 class TestEnums:
@@ -241,7 +245,7 @@ class TestRelease:
             "identifiers": [{"idType": "PURL", "idValue": "pkg:maven/org.apache.tomcat/tomcat@11.0.7"}],
             "distributions": [
                 {
-                    "distributionType": "zip",
+                    "distributionId": "zip",
                     "description": "Core binary distribution",
                     "checksums": [
                         {
@@ -253,9 +257,9 @@ class TestRelease:
                 }
             ],
         }
-        release = Release.model_validate(data)
+        release = Release.model_validate(data, context=LEGACY)
         assert release.version == "11.0.7"
-        assert release.distributions[0].distribution_type == "zip"
+        assert release.distributions[0].distribution_id == "zip"
         assert release.distributions[0].checksums[0].algorithm_type == ChecksumAlgorithm.SHA_256
 
 
@@ -283,7 +287,7 @@ class TestCollection:
                 }
             ],
         }
-        collection = Collection.model_validate(data)
+        collection = Collection.model_validate(data, context=LEGACY)
         assert collection.version == 3
         assert collection.belongs_to == CollectionBelongsTo.COMPONENT_RELEASE
         assert collection.update_reason.type == CollectionUpdateReasonType.ARTIFACT_UPDATED
@@ -298,7 +302,7 @@ class TestOptionalFields:
             "version": "1.0.0",
             "createdDate": "2024-01-01T00:00:00Z",
         }
-        release = Release.model_validate(data)
+        release = Release.model_validate(data, context=LEGACY)
         assert release.release_date is None
         assert release.pre_release is None
         assert release.component is None
@@ -307,15 +311,15 @@ class TestOptionalFields:
 
     def test_collection_minimal_fields(self):
         data = {"uuid": "c-1", "version": 1}
-        collection = Collection.model_validate(data)
-        assert collection.date is None
+        collection = Collection.model_validate(data, context=LEGACY)
+        assert collection.created_date is None
         assert collection.belongs_to is None
         assert collection.update_reason is None
         assert collection.artifacts == ()
 
     def test_collection_all_fields_optional(self):
-        """Per TEA spec, all Collection fields are optional."""
-        collection = Collection.model_validate({})
+        """Per TEA 0.4.0, all Collection fields are optional."""
+        collection = Collection.model_validate({}, context=LEGACY)
         assert collection.uuid is None
         assert collection.version is None
         assert collection.artifacts == ()
@@ -323,18 +327,18 @@ class TestOptionalFields:
     def test_collection_version_rejects_zero(self):
         """TEA spec says versions start with 1."""
         with pytest.raises(ValidationError):
-            Collection.model_validate({"version": 0})
+            Collection.model_validate({"version": 0}, context=LEGACY)
 
     def test_collection_version_rejects_negative(self):
         with pytest.raises(ValidationError):
-            Collection.model_validate({"version": -1})
+            Collection.model_validate({"version": -1}, context=LEGACY)
 
     def test_artifact_format_minimal_fields(self):
         data = {
             "mediaType": "application/json",
             "url": "https://example.com/sbom.json",
         }
-        fmt = ArtifactFormat.model_validate(data)
+        fmt = ArtifactFormat.model_validate(data, context=LEGACY)
         assert fmt.description is None
         assert fmt.signature_url is None
         assert fmt.checksums == ()
@@ -577,25 +581,9 @@ class TestCLEModels:
 class TestInteropCompat:
     """Tests for interoperability with older/non-standard server responses."""
 
-    def test_artifact_format_accepts_mime_type_as_alias(self):
-        """Servers may send ``mimeType`` instead of ``mediaType``."""
-        fmt = ArtifactFormat.model_validate({"mimeType": "application/json", "url": "https://example.com/sbom.json"})
-        assert fmt.media_type == "application/json"
-
-    def test_artifact_format_prefers_media_type_over_mime_type(self):
-        """When both are present, ``mediaType`` takes precedence."""
-        fmt = ArtifactFormat.model_validate(
-            {
-                "mediaType": "application/xml",
-                "mimeType": "text/plain",
-                "url": "https://example.com/sbom.xml",
-            }
-        )
-        assert fmt.media_type == "application/xml"
-
     def test_artifact_format_media_type_optional(self):
-        """mediaType is not required by the spec."""
-        fmt = ArtifactFormat.model_validate({"url": "https://example.com/sbom.json"})
+        """mediaType is not required by the 0.4.0 spec."""
+        fmt = ArtifactFormat.model_validate({"url": "https://example.com/sbom.json"}, context=LEGACY)
         assert fmt.media_type is None
 
     def test_artifact_format_url_optional(self):
@@ -603,78 +591,31 @@ class TestInteropCompat:
         fmt = ArtifactFormat.model_validate({"mediaType": "application/json"})
         assert fmt.url is None
 
-    def test_release_distribution_type_optional(self):
-        """distributionType can be null (not required by spec)."""
-        from libtea.models import ReleaseDistribution
-
-        dist = ReleaseDistribution.model_validate({"distributionType": None})
-        assert dist.distribution_type is None
-
-    def test_release_distribution_type_absent(self):
-        """distributionType can be entirely absent."""
-        from libtea.models import ReleaseDistribution
-
-        dist = ReleaseDistribution.model_validate({})
-        assert dist.distribution_type is None
-
     def test_identifier_all_fields_optional(self):
-        """Per spec, Identifier has no required fields."""
-        ident = Identifier.model_validate({})
+        """Per TEA 0.4.0, Identifier has no required fields."""
+        ident = Identifier.model_validate({}, context=LEGACY)
         assert ident.id_type is None
         assert ident.id_value is None
 
     def test_identifier_partial_fields(self):
-        """Per spec, only idType without idValue is valid."""
-        ident = Identifier.model_validate({"idType": "PURL"})
+        """Per TEA 0.4.0, only idType without idValue is valid."""
+        ident = Identifier.model_validate({"idType": "PURL"}, context=LEGACY)
         assert ident.id_type == "PURL"
         assert ident.id_value is None
 
-    def test_checksum_all_fields_optional(self):
-        """Per spec, Checksum has no required fields."""
-        cs = Checksum.model_validate({})
-        assert cs.algorithm_type is None
-        assert cs.algorithm_value is None
-
-    def test_checksum_partial_algorithm_type_only(self):
-        """Per spec, algType without algValue is valid."""
-        cs = Checksum.model_validate({"algType": "SHA-256"})
-        assert cs.algorithm_type == ChecksumAlgorithm.SHA_256
-        assert cs.algorithm_value is None
-
-    def test_artifact_all_fields_optional(self):
-        """Per spec, Artifact has no required fields."""
-        from libtea.models import Artifact
-
-        art = Artifact.model_validate({})
-        assert art.uuid is None
-        assert art.name is None
-        assert art.type is None
-        assert art.version is None
-        assert art.created_date is None
-        assert art.formats == ()
-
-    def test_artifact_partial_fields(self):
-        """Per spec, uuid alone is valid."""
-        from libtea.models import Artifact
-
-        art = Artifact.model_validate({"uuid": "abc-123"})
-        assert art.uuid == "abc-123"
-        assert art.name is None
-        assert art.type is None
-
     def test_collection_update_reason_all_fields_optional(self):
-        """Per spec, CollectionUpdateReason has no required fields."""
+        """Per TEA 0.4.0, CollectionUpdateReason has no required fields."""
         from libtea.models import CollectionUpdateReason
 
-        reason = CollectionUpdateReason.model_validate({})
+        reason = CollectionUpdateReason.model_validate({}, context=LEGACY)
         assert reason.type is None
         assert reason.comment is None
 
     def test_collection_update_reason_comment_only(self):
-        """Per spec, comment without type is valid."""
+        """Per TEA 0.4.0, comment without type is valid."""
         from libtea.models import CollectionUpdateReason
 
-        reason = CollectionUpdateReason.model_validate({"comment": "Updated manually"})
+        reason = CollectionUpdateReason.model_validate({"comment": "Updated manually"}, context=LEGACY)
         assert reason.type is None
         assert reason.comment == "Updated manually"
 
@@ -706,11 +647,8 @@ class TestErrorResponse:
 
 
 class TestComplianceDocumentType:
-    def test_fedramp_value(self):
-        assert ComplianceDocumentType.FEDRAMP == "FedRAMP"
-
     def test_all_members_count(self):
-        assert len(ComplianceDocumentType) == 20
+        assert len(ComplianceDocumentType) == 21
 
 
 class TestPaginatedComponentResponse:
@@ -761,7 +699,7 @@ class TestPaginatedComponentReleaseResponse:
                 }
             ],
         }
-        resp = PaginatedComponentReleaseResponse.model_validate(data)
+        resp = PaginatedComponentReleaseResponse.model_validate(data, context=LEGACY)
         assert resp.total_results == 1
         assert isinstance(resp.results[0], Release)
         assert resp.results[0].version == "1.0.0"
@@ -777,3 +715,45 @@ class TestPaginatedComponentReleaseResponse:
         resp = PaginatedComponentReleaseResponse.model_validate(data)
         assert resp.total_results == 0
         assert resp.results == ()
+
+
+class TestV1RequiredFields:
+    def test_collection_missing_created_date_rejected(self):
+        data = {k: v for k, v in V1_COLLECTION.items() if k != "createdDate"}
+        with pytest.raises(ValidationError, match="created_date"):
+            Collection.model_validate(data)
+
+    def test_collection_legacy_date_mapped(self):
+        c = Collection.model_validate({"uuid": COMPONENT_RELEASE, "date": "2024-12-15T00:00:00Z"}, context=LEGACY)
+        assert c.created_date == datetime(2024, 12, 15, tzinfo=timezone.utc)
+
+    def test_collection_date_key_not_mapped_on_v1(self):
+        data = {**{k: v for k, v in V1_COLLECTION.items() if k != "createdDate"}, "date": "2024-12-15T00:00:00Z"}
+        with pytest.raises(ValidationError, match="created_date"):
+            Collection.model_validate(data)
+
+    def test_nested_artifact_enforced(self):
+        bad = {**V1_COLLECTION, "artifacts": [{k: v for k, v in V1_ARTIFACT.items() if k != "version"}]}
+        with pytest.raises(ValidationError) as exc:
+            Collection.model_validate(bad)
+        assert exc.value.errors()[0]["loc"][:2] == ("artifacts", 0)
+
+    def test_identifier_both_fields_v1_only(self):
+        with pytest.raises(ValidationError, match="id_value"):
+            Identifier.model_validate({"idType": "PURL"})
+        assert Identifier.model_validate({"idType": "PURL"}, context=LEGACY).id_value is None
+
+    def test_checksum_fields_required_in_both(self):
+        with pytest.raises(ValidationError):
+            Checksum.model_validate({"algType": "SHA-256"}, context=LEGACY)
+
+    def test_format_with_url_requires_checksums(self):
+        with pytest.raises(ValidationError, match="checksums"):
+            ArtifactFormat.model_validate({"mediaType": "application/json", "url": "https://x.example.com/a"})
+
+    def test_artifact_requires_formats_entry(self):
+        with pytest.raises(ValidationError, match="formats"):
+            Artifact.model_validate({**V1_ARTIFACT, "formats": []})
+
+    def test_fedramp_value(self):
+        assert ComplianceDocumentType.FEDRAMP == "FEDRAMP"
