@@ -38,6 +38,8 @@ from libtea.models import (
 
 logger = logging.getLogger("libtea")
 
+_TEI_PREFIXES = ("tei://", "urn:tei:")
+
 
 def _configure_logging(*, verbose: bool, debug: bool) -> None:
     """Set up logging based on --verbose / --debug flags."""
@@ -1115,9 +1117,9 @@ def download(
     port: int | None,
     allow_private_ips: bool,
 ) -> None:
-    """Fetch artifact(s) from a URL or TEI URN.
+    """Fetch artifact(s) from a URL or TEI.
 
-    SOURCE is a direct artifact URL or a TEI URN (urn:tei:...).
+    SOURCE is a direct artifact URL or a TEI (tei://... or urn:tei:...).
 
     \b
     URL mode:   download <url> <destination-file>
@@ -1136,7 +1138,7 @@ def download(
     if output_file:
         raise click.UsageError("--output is not supported by 'download'; use DESTINATION to specify the output path")
 
-    if source.startswith("urn:tei:"):
+    if source.startswith(_TEI_PREFIXES):
         if checksum:
             raise click.UsageError("--checksum is not supported in TEI mode (checksums come from server metadata)")
         if destination is not None and Path(destination).is_file():
@@ -1162,7 +1164,7 @@ def download(
 
     # URL mode: existing direct download behavior
     if dry_run:
-        raise click.UsageError("--dry-run is only supported in TEI mode (urn:tei:... source)")
+        raise click.UsageError("--dry-run is only supported in TEI mode (tei://... or urn:tei:... source)")
     if destination is None:
         raise click.UsageError("DESTINATION is required when downloading from a URL")
     dest_path = Path(destination)

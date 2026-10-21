@@ -2245,6 +2245,74 @@ class TestCLIUXImprovements:
         assert "sbom.cdx.json" in combined
         assert not dest.exists()
 
+    @responses.activate
+    def test_tei_uri_dry_run_enters_tei_mode(self, tmp_path):
+        """A tei:// source is TEI mode: --dry-run lists artifacts instead of being rejected as URL mode."""
+        tei = "tei://example.com/uuid/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        pr_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        responses.get(
+            f"{BASE_URL}/discovery",
+            match=[matchers.query_param_matcher({"tei": tei})],
+            json=[{"productReleaseUuid": pr_uuid, "servers": [{"rootUrl": BASE_URL, "versions": ["1.0.0"]}]}],
+        )
+        responses.get(
+            f"{BASE_URL}/productRelease/{pr_uuid}/collection/latest",
+            json={
+                "uuid": pr_uuid,
+                "version": 1,
+                "artifacts": [
+                    {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
+                        "name": "SBOM",
+                        "formats": [{"url": "https://cdn.example.com/sbom.cdx.json", "checksums": []}],
+                    },
+                ],
+            },
+        )
+        dest = tmp_path / "output"
+        result = runner.invoke(app, ["download", tei, str(dest), "--dry-run", "--base-url", BASE_URL])
+        assert result.exit_code == 0
+        assert "Would download:" in _all_output(result)
+        assert not dest.exists()
+
+    @responses.activate
+    def test_tei_uri_download_reaches_discovery(self, tmp_path):
+        """Without --base-url, a tei:// source auto-discovers via its domain's .well-known/tea and downloads."""
+        tei = "tei://example.com/uuid/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        pr_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        artifact_url = "https://cdn.example.com/sbom.cdx.json"
+        responses.get(
+            "https://example.com/.well-known/tea",
+            json={"schemaVersion": 1, "endpoints": [{"url": "https://api.example.com", "versions": ["0.4.0"]}]},
+        )
+        responses.head("https://api.example.com/v0.4.0", status=200)
+        responses.get(
+            "https://api.example.com/v0.4.0/discovery",
+            match=[matchers.query_param_matcher({"tei": tei})],
+            json=[{"productReleaseUuid": pr_uuid, "servers": [{"rootUrl": BASE_URL, "versions": ["1.0.0"]}]}],
+        )
+        responses.get(
+            f"https://api.example.com/v0.4.0/productRelease/{pr_uuid}/collection/latest",
+            json={
+                "uuid": pr_uuid,
+                "version": 1,
+                "artifacts": [
+                    {
+                        "uuid": "art-uuid-1",
+                        "type": "BOM",
+                        "name": "SBOM",
+                        "formats": [{"url": artifact_url, "checksums": []}],
+                    },
+                ],
+            },
+        )
+        responses.get(artifact_url, body=b'{"bomFormat": "CycloneDX"}')
+        dest = tmp_path / "output"
+        result = runner.invoke(app, ["download", tei, str(dest)])
+        assert result.exit_code == 0, _all_output(result)
+        assert (dest / "sbom.cdx.json").exists()
+
     def test_dry_run_rejected_in_url_mode(self):
         """--dry-run is only valid in TEI mode."""
         result = runner.invoke(
