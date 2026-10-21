@@ -178,7 +178,8 @@ class TeaClient:
             timeout: Request timeout in seconds (default 30).
             version: TEA spec SemVer to match against. The default (``None``) negotiates
                 the highest of :data:`SUPPORTED_SPEC_VERSIONS` the server advertises:
-                ``1.0.0`` first, then ``0.4.0``.
+                ``1.0.0`` first, then ``0.4.0``. Only when neither is advertised exactly does it
+                downgrade to a compatible version (e.g. ``0.3.0``), with a warning.
             scheme: URL scheme for discovery — ``"https"`` (default) or ``"http"``.
             port: Optional port for ``.well-known`` resolution.
             max_retries: Retry count on 5xx (default 3).
@@ -201,22 +202,33 @@ class TeaClient:
         # Without an explicit ``version`` every supported version contributes, so failover can cross versions.
         wanted_versions = (version,) if version is not None else SUPPORTED_SPEC_VERSIONS
         attempts: dict[tuple[str, str], None] = {}  # insertion-ordered set
-        for wanted in wanted_versions:
-            try:
-                best = select_best_endpoint(well_known, wanted)
-            except TeaDiscoveryError:
-                if version is not None:
-                    raise
-                continue
-            matched_version = best.matched_version
-            try:
-                # Rejects an unsupported version (possible with an explicit ``version``) before any probe.
-                _resolve_spec_version(best.endpoint.url, matched_version)
-            except ValueError as exc:
-                raise TeaDiscoveryError(f"Cannot use negotiated version {matched_version!r}: {exc}") from exc
-            for endpoint in select_endpoints(well_known, matched_version):
-                # Build metadata does not affect precedence, so each endpoint may spell the version differently.
-                attempts[(endpoint.url, _advertised_version(endpoint, matched_version))] = None
+        if version is None:
+            # Exact matches first: a prerelease such as ``1.0.0-rc.1`` is not a version this client supports,
+            # so a compatible downgrade is only a fallback when no supported version is advertised as-is.
+            for wanted in SUPPORTED_SPEC_VERSIONS:
+                try:
+                    exact = select_endpoints(well_known, wanted)
+                except TeaDiscoveryError:
+                    continue
+                for endpoint in exact:
+                    attempts[(endpoint.url, _advertised_version(endpoint, wanted))] = None
+        if not attempts:
+            for wanted in wanted_versions:
+                try:
+                    best = select_best_endpoint(well_known, wanted)
+                except TeaDiscoveryError:
+                    if version is not None:
+                        raise
+                    continue
+                matched_version = best.matched_version
+                try:
+                    # Rejects an unsupported version (possible with an explicit ``version``) before any probe.
+                    _resolve_spec_version(best.endpoint.url, matched_version)
+                except ValueError as exc:
+                    raise TeaDiscoveryError(f"Cannot use negotiated version {matched_version!r}: {exc}") from exc
+                for endpoint in select_endpoints(well_known, matched_version):
+                    # Build metadata does not affect precedence, so each endpoint may spell the version differently.
+                    attempts[(endpoint.url, _advertised_version(endpoint, matched_version))] = None
         if not attempts:
             offered = sorted({v for ep in well_known.endpoints for v in ep.versions})
             raise TeaDiscoveryError(

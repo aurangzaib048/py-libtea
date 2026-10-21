@@ -882,6 +882,30 @@ class TestEndpointNegotiation:
         ]
 
     @responses.activate
+    def test_exact_supported_version_beats_prerelease(self):
+        """A 1.0.0 prerelease is not 1.0.0; the exact 0.4.0 match wins and nothing warns."""
+        import warnings
+
+        responses.head(f"{self.API}/v1.0.0-rc.1", status=200)
+        responses.head(f"{self.API}/v0.4.0", status=200)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            client = self._discover({"url": self.API, "versions": ["0.4.0", "1.0.0-rc.1"]})
+        assert client.spec_version == "0.4.0"
+        assert client.is_legacy is True
+        assert [c.request.url for c in responses.calls[1:]] == [f"{self.API}/v0.4.0"]
+        assert [str(w.message) for w in caught] == []
+
+    @responses.activate
+    def test_downgrades_when_no_supported_version_matches_exactly(self):
+        responses.head(f"{self.API}/v0.3.0", status=200)
+        with pytest.warns(UserWarning, match="negotiated to server version 0.3.0"):
+            client = self._discover({"url": self.API, "versions": ["0.3.0"]})
+        assert client.spec_version == "0.3.0"
+        assert client.is_legacy is True
+        assert [c.request.url for c in responses.calls[1:]] == [f"{self.API}/v0.3.0"]
+
+    @responses.activate
     def test_higher_version_beats_higher_priority(self):
         responses.head("https://new.example.com/v1.0.0", status=200)
         client = self._discover(
