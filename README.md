@@ -78,20 +78,23 @@ with TeaClient.from_well_known("example.com") as client:
     print(pr.version, pr.product_name)
 ```
 
-Or connect directly to a known endpoint:
+Or connect directly to a known endpoint. The `/v<semver>` suffix selects the spec version; `trust.sbomify.com` is a working TEA 0.4.0 server:
 
 ```python
 client = TeaClient(
-    base_url="https://tea.example.com/tea/v1.0.0",  # the /v<semver> suffix selects the spec version
+    base_url="https://trust.sbomify.com/tea/v0.4.0",
     timeout=30.0,
 )
+
+# A TEA 1.0.0 server
+client = TeaClient(base_url="https://tea.example.com/tea/v1.0.0", timeout=30.0)
 ```
 
 `from_well_known` negotiates the spec version for you (TEA 1.0.0 first, then 0.4.0). You can also pin a version and set the timeout:
 
 ```python
 client = TeaClient.from_well_known(
-    "example.com",
+    "trust.sbomify.com",
     timeout=15.0,
     version="0.4.0",  # default: None, i.e. negotiate 1.0.0 first, then 0.4.0
 )
@@ -104,7 +107,7 @@ client = TeaClient.from_well_known(
 libtea speaks TEA 1.0.0 and 0.4.0. Each client knows which one it talks to, and its behaviour follows that version, never the shape of a response:
 
 ```python
-client = TeaClient("https://tea.example.com/tea/v0.4.0")
+client = TeaClient("https://trust.sbomify.com/tea/v0.4.0")
 client.spec_version  # "0.4.0"
 client.is_legacy     # True for 0.4.0, False for 1.x
 ```
@@ -154,7 +157,7 @@ endpoint = select_endpoint(well_known, "1.0.0")
 print(endpoint.url, endpoint.priority)
 ```
 
-Known TEI types: `uuid`, `purl`, `hash`, `swid`, `eanupc`, `gtin`, `asin`, `udi` (`TeiType`). In the `tei://` form `parse_tei` accepts any lowercase type, so types added to the spec's registry keep working. A `purl` identifier in that form is the unpadded Base64URL encoding of the PURL; libtea passes it through unchanged.
+Known TEI types: `uuid`, `purl`, `hash`, `swid`, `eanupc`, `gtin`, `asin`, `udi` (`TeiType`). In the `tei://` form `parse_tei` accepts any type matching `[a-z][a-z0-9]*` (a lowercase letter, then lowercase letters or digits), so types added to the spec's registry keep working. A `purl` identifier in that form is the unpadded Base64URL encoding of the PURL; libtea passes it through unchanged.
 
 ### Search
 
@@ -297,13 +300,22 @@ with TeaClient.from_well_known("trust.sbomify.com") as client:
 A format without a `url` is hosted by the TEA server itself (TEA 1.x). Fetch it through the server's download endpoint:
 
 ```python
-    path = client.download_artifact_content(
-        artifact.uuid,
-        Path("sbom.json"),
-        media_type=fmt.media_type,
-        version=artifact.version,  # omit for the latest version
-        verify_checksums=list(fmt.checksums),
-    )
+from pathlib import Path
+
+from libtea import TeaClient
+
+with TeaClient("https://tea.example.com/tea/v1.0.0") as client:
+    artifact = client.get_artifact("artifact-uuid")
+    fmt = artifact.formats[0]
+
+    if fmt.url is None:  # hosted by the TEA server itself
+        path = client.download_artifact_content(
+            artifact.uuid,
+            Path("sbom.json"),
+            media_type=fmt.media_type,  # required on TEA 1.x
+            version=artifact.version,  # omit for the latest version
+            verify_checksums=list(fmt.checksums),
+        )
 ```
 
 Supported checksum algorithms: SHA-1, SHA-256, SHA-384, SHA-512, SHA3-256, SHA3-384, SHA3-512, BLAKE2b-256, BLAKE2b-384, BLAKE2b-512, and MD5 on 0.4.0 servers (TEA 1.0.0 dropped MD5, so a 1.x response that carries it is rejected). BLAKE3 is recognized in the model but not verifiable (Python's `hashlib` has no BLAKE3 support — a clear error is raised).
@@ -343,7 +355,7 @@ Enable optional TTL-based caching to avoid repeated API calls:
 
 ```python
 # Cache GET responses for 5 minutes
-client = TeaClient("https://tea.example.com/tea/v1.0.0", cache_ttl=300)
+client = TeaClient("https://trust.sbomify.com/tea/v0.4.0", cache_ttl=300)
 product = client.get_product("uuid")  # HTTP call
 product = client.get_product("uuid")  # served from cache
 
@@ -586,14 +598,21 @@ All exceptions inherit from `TeaError`:
 from libtea.exceptions import TeaError, TeaNotFoundError, TeaRequestError
 
 try:
-    product = client.get_product("unknown-uuid")
+    product = client.get_product("d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
 except TeaNotFoundError as exc:
     print(exc.error_type)  # "OBJECT_UNKNOWN" ("OBJECT_NOT_SHAREABLE" on 0.4.0 servers)
+except TeaError:
+    print("Something went wrong")
+
+try:
+    client.list_products(page_token="stale-token")
 except TeaRequestError as exc:
-    print(exc.error_type)  # e.g. "INVALID_PAGE_TOKEN"; None if the body has no TEA error
+    print(exc.error_type)  # "INVALID_PAGE_TOKEN" from a TEA 1.x server; None if the body has no TEA error
 except TeaError:
     print("Something went wrong")
 ```
+
+The UUID argument must be well formed (a malformed one raises `TeaValidationError` before any request). A TEA 0.x client also rejects a non-numeric `page_token` with `TeaValidationError`, so the second example needs a 1.x server.
 
 `error_type` is the `error` value of the server's TEA error body. `libtea.ErrorType` lists the known values (`OBJECT_UNKNOWN`, `NOT_IMPLEMENTED`, `NO_ACCEPTABLE_FORMAT`, `SIGNATURE_NOT_FOUND`, `INVALID_REQUEST`, `INVALID_PAGE_TOKEN`, and `OBJECT_NOT_SHAREABLE` on 0.4.0); servers may send others, which pass through as plain strings. Compare with `==`.
 

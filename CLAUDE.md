@@ -27,7 +27,7 @@ uv build                                   # Build wheel and sdist
 - **Line length**: 120, ruff rules: E, F, I
 - **Models**: Pydantic v2 with `frozen=True`, `extra="ignore"`, `alias_generator=to_camel`
 - **HTTP mocking**: `responses` library (not `unittest.mock` for HTTP)
-- **Coverage**: Branch coverage enabled, target ~97%
+- **Coverage**: Branch coverage enabled, target ~95%
 
 ## Architecture
 
