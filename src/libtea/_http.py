@@ -49,7 +49,7 @@ def _tea_error_type(raw: bytes) -> str | None:
     """
     try:
         body = json.loads(raw)
-    except ValueError:  # includes JSONDecodeError and UnicodeDecodeError; empty input
+    except (ValueError, RecursionError):  # ValueError: bad JSON/UTF-8, empty; RecursionError: deep nesting on 3.11
         return None
     error = body.get("error") if isinstance(body, dict) else None
     return error if isinstance(error, str) else None

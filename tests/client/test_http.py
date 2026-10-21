@@ -319,12 +319,21 @@ class TestErrorTypeFromBody:
     """Every 4xx surfaces the TEA ``error`` value when the body is a JSON object with a string ``error``."""
 
     @responses.activate
-    def test_400_carries_error_type(self, http_client):
-        responses.get(f"{LEGACY_BASE_URL}/products", status=400, json={"error": "INVALID_PAGE_TOKEN"})
+    @pytest.mark.parametrize("status, error", [(400, "INVALID_PAGE_TOKEN"), (406, "NO_ACCEPTABLE_FORMAT")])
+    def test_4xx_carries_error_type(self, http_client, status, error):
+        responses.get(f"{LEGACY_BASE_URL}/products", status=status, json={"error": error})
         with pytest.raises(TeaRequestError) as exc:
             http_client.get_json("/products")
-        assert exc.value.error_type == "INVALID_PAGE_TOKEN"
-        assert "INVALID_PAGE_TOKEN" in str(exc.value)
+        assert exc.value.error_type == error
+        assert error in str(exc.value)
+
+    @responses.activate
+    def test_400_deeply_nested_body_has_no_error_type(self, http_client):
+        """json.loads raises RecursionError (not ValueError) on deep nesting under Python 3.11."""
+        responses.get(f"{LEGACY_BASE_URL}/products", status=400, body=b"[" * 4000)
+        with pytest.raises(TeaRequestError) as exc:
+            http_client.get_json("/products")
+        assert exc.value.error_type is None
 
     @responses.activate
     def test_unknown_error_value_passes_through(self, http_client):
