@@ -730,13 +730,70 @@ class TeaClient:
             TeaConnectionError: On network failure.
             TeaValidationError: If download exceeds max_download_bytes.
         """
+        return self._download(url, dest, verify_checksums, max_download_bytes)
+
+    def download_artifact_content(
+        self,
+        uuid: str,
+        dest: Path,
+        *,
+        media_type: str,
+        version: int | None = None,
+        verify_checksums: list[Checksum] | None = None,
+        max_download_bytes: int | None = None,
+    ) -> Path:
+        """Download artifact content hosted by the TEA server itself (a format without ``url``).
+
+        Fetches ``/artifact/{uuid}/{version}/download?mediaType=...`` (``latest`` when
+        ``version`` is omitted) with the client's credentials. A redirect is followed
+        without credentials, so the token is only ever sent to the API base.
+
+        Args:
+            uuid: Artifact UUID.
+            dest: Local file path to write to.
+            media_type: Media type of the format to download.
+            version: Artifact version number (starts at 1), or ``None`` for the latest.
+            verify_checksums: Optional list of checksums to verify after download.
+                On mismatch the downloaded file is deleted.
+            max_download_bytes: Optional maximum download size in bytes.
+
+        Returns:
+            The destination path.
+
+        Raises:
+            TeaValidationError: On a TEA 0.x server, or if download exceeds max_download_bytes.
+            TeaRequestError: If the server has no format for ``media_type`` (``NO_ACCEPTABLE_FORMAT``).
+            TeaChecksumError: If checksum verification fails.
+            TeaConnectionError: On network failure.
+        """
+        if self.is_legacy:
+            raise TeaValidationError("Server-hosted artifact download requires a TEA 1.x server")
+        if version is not None:
+            _validate_artifact_version(version)
+        revision = "latest" if version is None else version
+        url = f"{self._http._base_url}/artifact/{_validate_path_segment(uuid)}/{revision}/download"
+        return self._download(
+            url, dest, verify_checksums, max_download_bytes, params={"mediaType": media_type}, authenticated=True
+        )
+
+    def _download(
+        self,
+        url: str,
+        dest: Path,
+        verify_checksums: list[Checksum] | None,
+        max_download_bytes: int | None,
+        *,
+        params: dict[str, str] | None = None,
+        authenticated: bool = False,
+    ) -> Path:
+        """Download with on-the-fly hashing, warning on weak algorithms and verifying checksums."""
         algorithms = [cs.algorithm_type.value for cs in verify_checksums] if verify_checksums else None
         if algorithms:
             weak = set(algorithms) & WEAK_HASH_ALGORITHMS
             if weak:
                 warnings.warn(
                     f"Verifying with weak hash algorithm(s): {', '.join(sorted(weak))}. Prefer SHA-256 or stronger.",
-                    stacklevel=2,
+                    stacklevel=3,
                 )
         computed = self._http.download_with_hashes(
             url,
@@ -744,6 +801,8 @@ class TeaClient:
             algorithms=algorithms,
             max_download_bytes=max_download_bytes,
             allow_private_ips=self._allow_private_ips,
+            params=params,
+            authenticated=authenticated,
         )
 
         if verify_checksums:

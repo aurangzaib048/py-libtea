@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from inspect import signature as _signature
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 from urllib.parse import urlparse
 
 import click
@@ -1063,7 +1063,7 @@ def _download_from_tei(
         collection = client.get_product_release_collection_latest(disc.product_release_uuid)
         for art_idx, artifact in enumerate(collection.artifacts):
             for fmt in artifact.formats:
-                if not fmt.url:
+                if not fmt.url and client.is_legacy:
                     continue
                 filename = _artifact_filename(fmt, artifact, art_idx)
                 filename = _deduplicate_filename(filename, seen_filenames)
@@ -1076,12 +1076,22 @@ def _download_from_tei(
                     downloaded += 1
                     continue
                 try:
-                    client.download_artifact(
-                        fmt.url,
-                        dest_path,
-                        verify_checksums=checksums or None,
-                        max_download_bytes=max_download_bytes,
-                    )
+                    if fmt.url:
+                        client.download_artifact(
+                            fmt.url,
+                            dest_path,
+                            verify_checksums=checksums or None,
+                            max_download_bytes=max_download_bytes,
+                        )
+                    else:  # TEA 1.x: the server hosts formats without a url
+                        client.download_artifact_content(
+                            artifact.uuid,
+                            dest_path,
+                            media_type=cast(str, fmt.media_type),  # required on TEA 1.x
+                            version=artifact.version,
+                            verify_checksums=checksums or None,
+                            max_download_bytes=max_download_bytes,
+                        )
                     if not quiet:
                         checksum_note = " (checksum OK)" if checksums else ""
                         print(f"Downloaded {filename}{checksum_note}", file=sys.stderr)

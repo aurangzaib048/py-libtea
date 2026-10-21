@@ -269,6 +269,8 @@ class TeaHttpClient:
         *,
         max_download_bytes: int | None = None,
         allow_private_ips: bool = False,
+        params: dict[str, str] | None = None,
+        authenticated: bool = False,
     ) -> dict[str, str]:
         """Download a file and compute checksums on-the-fly.
 
@@ -276,21 +278,33 @@ class TeaHttpClient:
         is not leaked to third-party artifact hosts (CDNs, Maven Central, etc.).
         Redirects are followed manually with SSRF validation at each hop.
 
+        With ``authenticated=True`` the first request goes through the API session
+        (credentials, retries) and, like :meth:`get_json`, trusts the configured API
+        base without an SSRF check. Every redirect hop still uses the unauthenticated
+        session, so credentials never leave the API base, not even on a same-host redirect.
+
         Args:
-            url: Direct download URL.
+            url: Direct download URL. Must be under the API base when ``authenticated``.
             dest: Local file path to write to. Parent directories are created.
             algorithms: Optional list of checksum algorithm names to compute.
             max_download_bytes: Optional maximum download size in bytes.
+            params: Optional query parameters for the first request.
+            authenticated: Send the first request with the API credentials.
 
         Returns:
             Dict mapping algorithm name to hex digest string.
 
         Raises:
+            ValueError: If ``authenticated`` and ``url`` is not under the API base.
             TeaConnectionError: On network failure. Partial files are deleted.
             TeaChecksumError: If an unsupported algorithm is requested.
             TeaValidationError: If download exceeds max_download_bytes or fails SSRF check.
         """
-        _validate_download_url(url, allow_private_ips=allow_private_ips)
+        if authenticated:
+            if not url.startswith(f"{self._base_url}/"):
+                raise ValueError(f"Authenticated download URL must be under the API base {self._base_url}")
+        else:
+            _validate_download_url(url, allow_private_ips=allow_private_ips)
         logger.debug("DOWNLOAD %s -> %s", url, dest)
         hashers = _build_hashers(algorithms) if algorithms else {}
 
@@ -301,12 +315,13 @@ class TeaHttpClient:
 
                 # Follow redirects manually with SSRF validation at each hop
                 current_url = url
+                session = self._session if authenticated else download_session
                 response = None
                 try:
                     redirects = 0
                     while True:
-                        response = download_session.get(
-                            current_url, stream=True, timeout=self._timeout, allow_redirects=False
+                        response = session.get(
+                            current_url, params=params, stream=True, timeout=self._timeout, allow_redirects=False
                         )
                         if 300 <= response.status_code < 400:
                             redirects += 1
@@ -317,6 +332,7 @@ class TeaHttpClient:
                                 raise TeaRequestError(f"Redirect without Location header: HTTP {response.status_code}")
                             current_url = urljoin(current_url, location)
                             _validate_download_url(current_url, allow_private_ips=allow_private_ips)
+                            session, params = download_session, None
                             response.close()
                             response = None
                             continue

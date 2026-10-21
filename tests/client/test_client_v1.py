@@ -6,7 +6,8 @@ from responses import matchers
 
 from libtea._validation import _validate, _validate_list
 from libtea.client import TeaClient
-from libtea.exceptions import TeaServerError, TeaValidationError
+from libtea.exceptions import TeaChecksumError, TeaRequestError, TeaServerError, TeaValidationError
+from libtea.models import Checksum
 from tests.spec_data import (
     ARTIFACT,
     COMPONENT,
@@ -359,3 +360,91 @@ def test_get_component_release_legacy_nested(legacy):
         json={"release": V1_RELEASE, "latestCollection": V1_COLLECTION},
     )
     assert legacy.get_component_release(COMPONENT_RELEASE).release.uuid == COMPONENT_RELEASE
+
+
+# --- Server-hosted artifact download (TEA 1.0.0) ---
+
+MEDIA = "application/vnd.cyclonedx+json"
+EMPTY_JSON_SHA256 = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"  # sha256(b"{}")
+
+
+@responses.activate
+def test_token_not_forwarded_on_redirect(tmp_path):  # Review Focus 4
+    c = TeaClient(V1_BASE_URL, token="secret")
+    responses.get(
+        f"{V1_BASE_URL}/artifact/{ARTIFACT}/2/download",
+        match=[matchers.query_param_matcher({"mediaType": MEDIA})],
+        status=302,
+        headers={"Location": "https://cdn.example.com/blob/abc"},
+    )
+    responses.get("https://cdn.example.com/blob/abc", body=b"{}")
+    c.download_artifact_content(
+        ARTIFACT,
+        tmp_path / "a.json",
+        media_type=MEDIA,
+        version=2,
+        verify_checksums=[Checksum(algorithm_type="SHA-256", algorithm_value=EMPTY_JSON_SHA256)],
+    )
+    assert responses.calls[0].request.headers["Authorization"] == "Bearer secret"
+    assert "Authorization" not in responses.calls[1].request.headers
+
+
+@responses.activate
+def test_token_not_forwarded_on_redirect_to_api_host(tmp_path):
+    c = TeaClient(V1_BASE_URL, token="secret")
+    responses.get(
+        f"{V1_BASE_URL}/artifact/{ARTIFACT}/2/download",
+        status=302,
+        headers={"Location": "/blobs/abc"},
+    )
+    responses.get("https://api.example.com/blobs/abc", body=b"{}")
+    c.download_artifact_content(ARTIFACT, tmp_path / "a.json", media_type=MEDIA, version=2)
+    assert responses.calls[1].request.url == "https://api.example.com/blobs/abc"
+    assert "Authorization" not in responses.calls[1].request.headers
+
+
+@responses.activate
+def test_latest_when_version_omitted(v1, tmp_path):
+    responses.get(f"{V1_BASE_URL}/artifact/{ARTIFACT}/latest/download", body=b"{}")
+    assert v1.download_artifact_content(ARTIFACT, tmp_path / "a", media_type=MEDIA).read_bytes() == b"{}"
+
+
+@responses.activate
+def test_server_download_rejected_on_legacy(legacy, tmp_path):
+    with pytest.raises(TeaValidationError, match="TEA 1.x"):
+        legacy.download_artifact_content(ARTIFACT, tmp_path / "a", media_type=MEDIA)
+    assert len(responses.calls) == 0
+
+
+@responses.activate
+def test_server_download_no_acceptable_format(v1, tmp_path):
+    responses.get(
+        f"{V1_BASE_URL}/artifact/{ARTIFACT}/latest/download", status=406, json={"error": "NO_ACCEPTABLE_FORMAT"}
+    )
+    dest = tmp_path / "a"
+    with pytest.raises(TeaRequestError) as exc_info:
+        v1.download_artifact_content(ARTIFACT, dest, media_type=MEDIA)
+    assert exc_info.value.error_type == "NO_ACCEPTABLE_FORMAT"
+    assert not dest.exists()
+
+
+@responses.activate
+def test_server_download_checksum_mismatch_deletes_file(v1, tmp_path):
+    responses.get(f"{V1_BASE_URL}/artifact/{ARTIFACT}/latest/download", body=b"[]")
+    dest = tmp_path / "a"
+    with pytest.raises(TeaChecksumError):
+        v1.download_artifact_content(
+            ARTIFACT,
+            dest,
+            media_type=MEDIA,
+            verify_checksums=[Checksum(algorithm_type="SHA-256", algorithm_value=EMPTY_JSON_SHA256)],
+        )
+    assert not dest.exists()
+
+
+@responses.activate
+def test_server_download_trusts_private_api_base(tmp_path):
+    """The first hop is the configured API base, exempt from SSRF checks like every other API call."""
+    c = TeaClient("https://10.0.0.5/tea/v1.0.0")
+    responses.get(f"https://10.0.0.5/tea/v1.0.0/artifact/{ARTIFACT}/latest/download", body=b"{}")
+    assert c.download_artifact_content(ARTIFACT, tmp_path / "a", media_type=MEDIA).read_bytes() == b"{}"

@@ -13,7 +13,14 @@ click = pytest.importorskip("click", reason="click not installed (install libtea
 from click.testing import CliRunner  # noqa: E402
 
 from libtea.cli import app  # noqa: E402
-from tests.spec_data import LEGACY, PRODUCT_RELEASE, V1_BASE_URL  # noqa: E402
+from tests.spec_data import (  # noqa: E402
+    ARTIFACT,
+    LEGACY,
+    PRODUCT_RELEASE,
+    V1_ARTIFACT,
+    V1_BASE_URL,
+    V1_COLLECTION,
+)
 
 runner = CliRunner()
 
@@ -1868,6 +1875,32 @@ class TestDownloadTeiMode:
         result = runner.invoke(app, ["download", tei, str(dest), "--base-url", BASE_URL])
         assert result.exit_code == 0
         assert (dest / "sbom.json").exists()
+
+    @responses.activate
+    def test_tei_mode_v1_downloads_server_hosted_format(self, tmp_path):
+        """On TEA 1.x a format without url is fetched from the artifact download endpoint."""
+        tei = "urn:tei:purl:example.com:pkg:pypi/test@1.0"
+        media = "application/vnd.cyclonedx+json"
+        empty_json_sha256 = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        fmt = {"mediaType": media, "checksums": [{"algType": "SHA-256", "algValue": empty_json_sha256}]}
+        collection = {**V1_COLLECTION, "artifacts": [{**V1_ARTIFACT, "name": "SBOM", "formats": [fmt]}]}
+        responses.get(
+            f"{V1_BASE_URL}/discovery",
+            json=[
+                {"productReleaseUuid": PRODUCT_RELEASE, "servers": [{"rootUrl": V1_BASE_URL, "versions": ["1.0.0"]}]}
+            ],
+        )
+        responses.get(f"{V1_BASE_URL}/productRelease/{PRODUCT_RELEASE}/collection/latest", json=collection)
+        responses.get(
+            f"{V1_BASE_URL}/artifact/{ARTIFACT}/2/download",
+            match=[matchers.query_param_matcher({"mediaType": media})],
+            body=b"{}",
+        )
+        dest = tmp_path / "output"
+        result = runner.invoke(app, ["download", tei, str(dest), "--base-url", V1_BASE_URL])
+        assert result.exit_code == 0, _all_output(result)
+        assert (dest / "SBOM.cdx.json").read_bytes() == b"{}"
+        assert "Downloaded SBOM.cdx.json (checksum OK)" in _all_output(result)
 
     def test_tei_mode_rejects_checksum_flag(self, tmp_path):
         """--checksum is rejected in TEI mode."""

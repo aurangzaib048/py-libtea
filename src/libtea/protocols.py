@@ -137,6 +137,17 @@ class TeaClientProtocol(Protocol):
         max_download_bytes: int | None = None,
     ) -> Path: ...
 
+    def download_artifact_content(
+        self,
+        uuid: str,
+        dest: Path,
+        *,
+        media_type: str,
+        version: int | None = None,
+        verify_checksums: list[Checksum] | None = None,
+        max_download_bytes: int | None = None,
+    ) -> Path: ...
+
     # --- Pagination iterators ---
 
     def iter_products(self, id_type: str, id_value: str, *, page_size: int = 100) -> Iterator[Product]: ...
