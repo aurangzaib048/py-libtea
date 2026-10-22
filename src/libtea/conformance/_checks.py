@@ -159,12 +159,13 @@ def check_search_products(client: TeaClient, ctx: CheckContext) -> CheckResult:
     if not ident.id_type or not ident.id_value:
         return _skip(name, "First identifier missing type or value")
     try:
-        resp = client.search_products(ident.id_type, ident.id_value)
+        # The iterator follows page tokens: a TEA 1.x page may be empty and still have more after it.
+        found = next(client.iter_products(ident.id_type, ident.id_value), None)
     except TeaError as exc:
         return _fail(name, f"search_products() failed: {exc}", details=str(exc))
-    if not resp.results:
+    if found is None:
         return _fail(name, "Search returned no results for a known identifier")
-    return _pass(name, f"Search returned {len(resp.results)} product(s)")
+    return _pass(name, f"Search found product {found.uuid} for a known identifier")
 
 
 def check_get_product(client: TeaClient, ctx: CheckContext) -> CheckResult:
@@ -244,12 +245,13 @@ def check_search_product_releases(client: TeaClient, ctx: CheckContext) -> Check
     if not ident.id_type or not ident.id_value:
         return _skip(name, "First identifier missing type or value")
     try:
-        resp = client.search_product_releases(ident.id_type, ident.id_value)
+        # The iterator follows page tokens: a TEA 1.x page may be empty and still have more after it.
+        found = next(client.iter_product_releases(ident.id_type, ident.id_value), None)
     except TeaError as exc:
         return _fail(name, f"search_product_releases() failed: {exc}", details=str(exc))
-    if not resp.results:
+    if found is None:
         return _fail(name, "Search returned no results for a known identifier")
-    return _pass(name, f"Search returned {len(resp.results)} release(s)")
+    return _pass(name, f"Search found release {found.uuid} for a known identifier")
 
 
 def check_get_product_release(client: TeaClient, ctx: CheckContext) -> CheckResult:

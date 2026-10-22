@@ -36,7 +36,15 @@ from libtea.conformance._checks import (
     check_uuid_format,
 )
 from libtea.conformance._types import CheckStatus
-from tests.spec_data import COMPONENT, PRODUCT, V1_BASE_URL, product
+from tests.spec_data import (
+    COMPONENT,
+    PRODUCT,
+    PRODUCT_RELEASE,
+    V1_BASE_URL,
+    V1_COLLECTION,
+    V1_PRODUCT_RELEASE,
+    product,
+)
 
 BASE_URL = "https://api.example.com/tea/v0.4.0"
 
@@ -550,6 +558,25 @@ class TestCheckSearchProducts:
         assert result.status == CheckStatus.FAIL
         assert "no results" in result.message
 
+    @responses.activate
+    def test_v1_follows_token_past_empty_first_page(self, v1):
+        known = {**product(PRODUCT, "A"), "identifiers": [{"idType": "PURL", "idValue": "pkg:x"}]}
+        responses.get(f"{V1_BASE_URL}/product/{PRODUCT}", json=known)
+        search = {"idType": "PURL", "idValue": "pkg:x", "pageSize": "100"}
+        responses.get(
+            f"{V1_BASE_URL}/products",
+            match=[matchers.query_param_matcher(search)],
+            json={"hasNext": True, "nextPageToken": "t2", "results": []},
+        )
+        responses.get(
+            f"{V1_BASE_URL}/products",
+            match=[matchers.query_param_matcher({**search, "pageToken": "t2"})],
+            json={"hasNext": False, "results": [known]},
+        )
+        result = check_search_products(v1, CheckContext(product_uuid=PRODUCT))
+        assert result.status == CheckStatus.PASS
+        assert len(responses.calls) == 3
+
 
 class TestCheckProductReleases:
     @responses.activate
@@ -693,6 +720,28 @@ class TestCheckSearchProductReleases:
         result = check_search_product_releases(client, ctx)
         assert result.status == CheckStatus.FAIL
         assert "no results" in result.message
+
+    @responses.activate
+    def test_v1_follows_token_past_empty_first_page(self, v1):
+        release = {**V1_PRODUCT_RELEASE, "identifiers": [{"idType": "PURL", "idValue": "pkg:x@1"}]}
+        responses.get(
+            f"{V1_BASE_URL}/productRelease/{PRODUCT_RELEASE}",
+            json={**release, "latestCollection": {**V1_COLLECTION, "belongsTo": "PRODUCT_RELEASE"}},
+        )
+        search = {"idType": "PURL", "idValue": "pkg:x@1", "pageSize": "100"}
+        responses.get(
+            f"{V1_BASE_URL}/productReleases",
+            match=[matchers.query_param_matcher(search)],
+            json={"hasNext": True, "nextPageToken": "t2", "results": []},
+        )
+        responses.get(
+            f"{V1_BASE_URL}/productReleases",
+            match=[matchers.query_param_matcher({**search, "pageToken": "t2"})],
+            json={"hasNext": False, "results": [release]},
+        )
+        result = check_search_product_releases(v1, CheckContext(product_release_uuid=PRODUCT_RELEASE))
+        assert result.status == CheckStatus.PASS
+        assert len(responses.calls) == 3
 
 
 class TestCheckGetProductRelease:
