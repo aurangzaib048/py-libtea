@@ -67,9 +67,7 @@ from libtea import TeaClient
 # Auto-discover the TEA server from the domain's .well-known/tea
 with TeaClient.from_well_known("example.com") as client:
     # Discover a product by TEI
-    results = client.discover(
-        "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
-    )
+    results = client.discover("tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
     for info in results:
         print(info.product_release_uuid, info.servers)
 
@@ -109,7 +107,7 @@ libtea speaks TEA 1.0.0 and 0.4.0. Each client knows which one it talks to, and 
 ```python
 client = TeaClient("https://trust.sbomify.com/tea/v0.4.0")
 client.spec_version  # "0.4.0"
-client.is_legacy     # True for 0.4.0, False for 1.x
+client.is_legacy  # True for 0.4.0, False for 1.x
 ```
 
 The version comes from the `spec_version=` argument, else a `/v<semver>` suffix on `base_url`, else the default (`TEA_SPEC_VERSION`, `"1.0.0"`). A base URL without a version suffix, such as `https://tea.example.com/v1`, is treated as TEA 1.0.0. `libtea.client.SUPPORTED_SPEC_VERSIONS` lists the supported versions, highest first.
@@ -129,9 +127,7 @@ from libtea import TeaClient
 
 with TeaClient.from_well_known("example.com") as client:
     # Discover product releases via TEI
-    results = client.discover(
-        "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
-    )
+    results = client.discover("tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
     for info in results:
         print(info.product_release_uuid, info.servers)
 
@@ -146,10 +142,8 @@ Low-level discovery functions are also available:
 ```python
 from libtea.discovery import parse_tei, fetch_well_known, select_endpoint
 
-# Parse a TEI
-tei_type, domain, identifier = parse_tei(
-    "tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
-)  # ("uuid", "example.com", "d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
+# Parse a TEI: ("uuid", "example.com", "d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
+tei_type, domain, identifier = parse_tei("tei://example.com/uuid/d4d9f54a-abcf-11ee-ac79-1a52914d44b1")
 
 # Fetch and select an endpoint manually
 well_known = fetch_well_known(domain)
@@ -176,8 +170,10 @@ with TeaClient.from_well_known("trust.sbomify.com") as client:
         if not page.has_next:
             break
         page = client.search_product_releases(
-            "PURL", "pkg:github/sbomify/sbomify",
-            page_token=page.next_page_token, page_size=100,
+            "PURL",
+            "pkg:github/sbomify/sbomify",
+            page_token=page.next_page_token,
+            page_size=100,
         )
 ```
 
@@ -384,6 +380,7 @@ Use the `TeaClientProtocol` for dependency inversion in consumer code:
 
 ```python
 from libtea import TeaClientProtocol
+
 
 def fetch_sbom(client: TeaClientProtocol, product_uuid: str):
     """Accepts any object matching the TeaClient interface."""
