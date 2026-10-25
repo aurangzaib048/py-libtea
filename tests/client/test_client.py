@@ -596,8 +596,9 @@ class TestComponentRelease:
 class TestArtifact:
     @responses.activate
     def test_get_artifact(self, client, base_url):
+        # TEA 0.4.0 has no /latest suffix: artifact metadata lives at /artifact/{uuid}
         responses.get(
-            f"{base_url}/artifact/e5f6a7b8-c9d0-1234-efab-345678901234/latest",
+            f"{base_url}/artifact/e5f6a7b8-c9d0-1234-efab-345678901234",
             json={
                 "uuid": "e5f6a7b8-c9d0-1234-efab-345678901234",
                 "name": "SBOM",
@@ -616,20 +617,10 @@ class TestArtifact:
         assert artifact.name == "SBOM"
 
     @responses.activate
-    def test_get_artifact_version(self, client, base_url):
-        responses.get(
-            f"{base_url}/artifact/e5f6a7b8-c9d0-1234-efab-345678901234/2",
-            json={
-                "uuid": "e5f6a7b8-c9d0-1234-efab-345678901234",
-                "name": "SBOM",
-                "type": "BOM",
-                "version": 2,
-                "formats": [],
-            },
-        )
-        artifact = client.get_artifact_version("e5f6a7b8-c9d0-1234-efab-345678901234", 2)
-        assert isinstance(artifact, Artifact)
-        assert artifact.version == 2
+    def test_get_artifact_version_requires_tea_1x(self, client):
+        with pytest.raises(TeaValidationError, match="TEA 1.x"):
+            client.get_artifact_version("e5f6a7b8-c9d0-1234-efab-345678901234", 2)
+        assert len(responses.calls) == 0
 
     def test_get_artifact_version_rejects_zero(self, client):
         with pytest.raises(TeaValidationError, match="Artifact version must be >= 1"):

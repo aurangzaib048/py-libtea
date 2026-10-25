@@ -695,13 +695,16 @@ class TeaClient:
     def get_artifact(self, uuid: str) -> Artifact:
         """Get the latest revision of artifact metadata by UUID.
 
+        TEA 1.x serves it at ``/artifact/{uuid}/latest``; TEA 0.4.0 at ``/artifact/{uuid}``.
+
         Args:
             uuid: Artifact UUID.
 
         Returns:
             The artifact with its formats and download URLs.
         """
-        data = self._http.get_json(f"/artifact/{_validate_path_segment(uuid)}/latest")
+        path = f"/artifact/{_validate_path_segment(uuid)}"
+        data = self._http.get_json(path if self.is_legacy else f"{path}/latest")
         return _validate(Artifact, data, legacy=self.is_legacy)
 
     def get_artifact_version(self, uuid: str, version: int) -> Artifact:
@@ -713,8 +716,13 @@ class TeaClient:
 
         Returns:
             The artifact with its formats and download URLs.
+
+        Raises:
+            TeaValidationError: On a TEA 0.4.0 server, which has no versioned artifact endpoint.
         """
         _validate_artifact_version(version)
+        if self.is_legacy:
+            raise TeaValidationError("Artifact versions require a TEA 1.x server")
         data = self._http.get_json(f"/artifact/{_validate_path_segment(uuid)}/{version}")
         return _validate(Artifact, data, legacy=self.is_legacy)
 

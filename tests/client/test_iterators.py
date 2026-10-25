@@ -381,7 +381,7 @@ class TestBulkFetch:
         ]
         for uid in uuids:
             responses.get(
-                f"{BASE_URL}/artifact/{uid}/latest",
+                f"{BASE_URL}/artifact/{uid}",
                 json={"uuid": uid, "name": "SBOM", "type": "BOM", "formats": []},
             )
         with TeaClient(BASE_URL) as client:

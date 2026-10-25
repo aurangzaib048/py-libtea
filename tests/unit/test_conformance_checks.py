@@ -1068,7 +1068,7 @@ class TestCheckComponentReleaseCollections:
 class TestCheckGetArtifact:
     @responses.activate
     def test_pass(self):
-        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", json=_ARTIFACT_JSON)
+        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}", json=_ARTIFACT_JSON)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
         result = check_get_artifact(client, ctx)
@@ -1083,7 +1083,7 @@ class TestCheckGetArtifact:
 
     @responses.activate
     def test_fail_on_server_error(self):
-        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", status=500)
+        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}", status=500)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
         result = check_get_artifact(client, ctx)
@@ -1092,7 +1092,7 @@ class TestCheckGetArtifact:
     @responses.activate
     def test_pass_artifact_without_name(self):
         artifact_no_name = {"uuid": _ARTIFACT_UUID, "type": "BOM", "formats": []}
-        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", json=artifact_no_name)
+        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}", json=artifact_no_name)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
         result = check_get_artifact(client, ctx)
@@ -1464,7 +1464,7 @@ class TestCheckArtifactFormatsRequired:
             "type": "BOM",
             "formats": [{"mediaType": "application/json", "url": "https://example.com/sbom.json"}],
         }
-        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", json=artifact_with_formats)
+        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}", json=artifact_with_formats)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
         result = check_artifact_formats_required(client, ctx)
@@ -1473,7 +1473,7 @@ class TestCheckArtifactFormatsRequired:
 
     @responses.activate
     def test_warn_no_formats(self):
-        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", json=_ARTIFACT_JSON)
+        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}", json=_ARTIFACT_JSON)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
         result = check_artifact_formats_required(client, ctx)
@@ -1488,7 +1488,7 @@ class TestCheckArtifactFormatsRequired:
 
     @responses.activate
     def test_fail_on_server_error(self):
-        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}/latest", status=500)
+        responses.get(f"{BASE_URL}/artifact/{_ARTIFACT_UUID}", status=500)
         client = _make_client()
         ctx = CheckContext(artifact_uuid=_ARTIFACT_UUID)
         result = check_artifact_formats_required(client, ctx)

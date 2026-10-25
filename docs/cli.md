@@ -257,7 +257,7 @@ tea-cli get-artifact UUID
 
 ### get-artifact-version
 
-Get a specific version of artifact metadata by UUID.
+Get a specific version of artifact metadata by UUID. Needs a TEA 1.x server: TEA 0.4.0 has no versioned artifact endpoint.
 
 ```
 tea-cli get-artifact-version UUID VERSION

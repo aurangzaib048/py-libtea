@@ -152,6 +152,20 @@ def test_v1_artifact_with_md5_rejected():
         TeaClient(V1_BASE_URL).get_artifact(ARTIFACT)
 
 
+@responses.activate
+def test_get_artifact_uses_latest_path_on_v1(v1):
+    responses.get(f"{V1_BASE_URL}/artifact/{ARTIFACT}/latest", json=V1_ARTIFACT)
+    assert v1.get_artifact(ARTIFACT).version == 2
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_get_artifact_version_on_v1(v1):
+    responses.get(f"{V1_BASE_URL}/artifact/{ARTIFACT}/2", json=V1_ARTIFACT)
+    assert v1.get_artifact_version(ARTIFACT, 2).version == 2
+    assert len(responses.calls) == 1
+
+
 # --- Token pagination ---
 
 

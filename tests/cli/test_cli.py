@@ -121,7 +121,7 @@ class TestCLICommands:
     def test_get_artifact(self):
         uuid = "d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
         responses.get(
-            f"{BASE_URL}/artifact/{uuid}/latest",
+            f"{BASE_URL}/artifact/{uuid}",
             json={"uuid": uuid, "name": "SBOM", "type": "BOM", "formats": []},
         )
         result = runner.invoke(app, ["--json", "get-artifact", uuid, "--base-url", BASE_URL])
@@ -236,13 +236,28 @@ class TestCLICommands:
     def test_get_artifact_version(self):
         uuid = "d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
         responses.get(
-            f"{BASE_URL}/artifact/{uuid}/2",
-            json={"uuid": uuid, "name": "SBOM", "type": "BOM", "version": 2, "formats": []},
+            f"{V1_BASE_URL}/artifact/{uuid}/2",
+            json={
+                "uuid": uuid,
+                "name": "SBOM",
+                "type": "BOM",
+                "version": 2,
+                "createdDate": "2024-12-13T00:00:00Z",
+                "formats": [{"mediaType": "application/json"}],
+            },
         )
-        result = runner.invoke(app, ["--json", "get-artifact-version", uuid, "2", "--base-url", BASE_URL])
+        result = runner.invoke(app, ["--json", "get-artifact-version", uuid, "2", "--base-url", V1_BASE_URL])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["name"] == "SBOM"
+
+    @responses.activate
+    def test_get_artifact_version_needs_tea_1x(self):
+        uuid = "d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
+        result = runner.invoke(app, ["get-artifact-version", uuid, "2", "--base-url", BASE_URL])
+        assert result.exit_code != 0
+        assert "TEA 1.x" in result.output
+        assert len(responses.calls) == 0
 
     @responses.activate
     def test_get_release_product(self):
@@ -680,7 +695,7 @@ class TestCLIMoreErrorPaths:
     @responses.activate
     def test_get_artifact_error(self):
         uuid = "d4d9f54a-abcf-11ee-ac79-1a52914d44b1"
-        responses.get(f"{BASE_URL}/artifact/{uuid}/latest", status=500)
+        responses.get(f"{BASE_URL}/artifact/{uuid}", status=500)
         result = runner.invoke(app, ["get-artifact", uuid, "--base-url", BASE_URL])
         assert result.exit_code == 1
 
